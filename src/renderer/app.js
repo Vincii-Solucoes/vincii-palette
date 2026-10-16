@@ -320,9 +320,28 @@ function settingsPanel() {
     items.push(el('p', { class: 'hint', text: 'O microfone e a câmera são pedidos pelo WhatsApp na primeira chamada; o sistema controla o acesso.' }));
   }
 
+  const update = state.update || { status: 'unsupported' };
+  const checked = update.checkedAt ? ` (verificado às ${new Date(update.checkedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})` : '';
+  const UPDATE_LABELS = {
+    unsupported: state.isPackaged ? 'Este build não verifica atualizações; instale pelo .dmg, .exe, .AppImage ou .deb do Release.' : 'Só no app instalado.',
+    idle: 'Verificação automática ligada: ao abrir, a cada hora e ao voltar à janela.',
+    checking: 'Verificando…',
+    'up-to-date': `Você está na versão mais recente${checked}.`,
+    available: `Versão ${update.version} disponível${checked}.`,
+    downloading: `Baixando a versão ${update.version}… ${update.percent || 0}%`,
+    downloaded: `Versão ${update.version} baixada e pronta para instalar.`,
+    error: `Falha ao verificar: ${update.message}${checked}`,
+  };
+  const updateActions = [];
+  if (update.status === 'downloaded') updateActions.push(el('button', { type: 'button', class: 'btn primary small', text: 'Reiniciar e atualizar', onclick: () => api.installUpdate() }));
+  else if (update.status === 'available') updateActions.push(el('button', { type: 'button', class: 'btn primary small', text: `Baixar ${update.version}`, onclick: () => api.openExternal(state.releasesUrl) }));
+  if (['idle', 'up-to-date', 'available', 'error'].includes(update.status)) updateActions.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Verificar agora', onclick: () => api.checkUpdate() }));
+
   items.push(
     el('h3', { text: 'Sobre' }),
     el('p', { class: 'hint small', text: `Palette ${state.version} · Vincii · Electron ${state.versions.electron || ''} · Chrome ${state.versions.chrome || ''}` }),
+    el('div', { class: `status ${update.status === 'error' ? 'bad' : update.status === 'downloaded' || update.status === 'available' ? 'ok' : ''}` }, [el('b', { text: 'Atualizações' }), el('span', { text: UPDATE_LABELS[update.status] || '' })]),
+    updateActions.length ? el('div', { class: 'actions' }, updateActions) : null,
     el('p', { class: 'hint small', text: 'Cada conta usa o WhatsApp Web oficial numa sessão isolada; o Palette só organiza as janelas, notificações e permissões.' }),
     el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn primary', text: 'Fechar', onclick: closeModal })]),
   );

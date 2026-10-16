@@ -45,6 +45,8 @@ git tag v1.1.0 && git push origin main --tags
 
 O CI compila os instaladores dos três sistemas e cria o Release `v1.1.0` com os metadados `latest*.yml` que o auto-update usa. Builds locais do `npm run mac:install` não têm `app-update.yml`, então não verificam atualização.
 
+O app verifica ao abrir, a cada hora e quando a janela volta ao foco. Em **Configurações › Sobre** você vê o estado (verificando, baixando, pronta para instalar) e tem **Verificar agora**; com a janela na bandeja, o aviso chega como notificação do sistema. O histórico fica em `updater.log` na pasta do perfil, e `npm run check-update` faz a mesma consulta ao GitHub a partir do projeto.
+
 > Repositório público significa código visível. Nenhum dado de conta vai junto: as sessões do WhatsApp ficam só no perfil do usuário (`~/Library/Application Support/Palette`, `%APPDATA%/Palette`, `~/.config/Palette`).
 
 ## Permissões de chamada

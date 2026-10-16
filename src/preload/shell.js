@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('palette', {
   setModal: (open) => ipcRenderer.send('shell:modal', !!open),
   setSetting: (key, value) => ipcRenderer.invoke('shell:set-setting', key, value),
   openPrivacy: () => ipcRenderer.send('shell:open-privacy'),
+  checkUpdate: () => ipcRenderer.invoke('shell:check-update'),
+  installUpdate: () => ipcRenderer.send('shell:install-update'),
   openExternal: (url) => ipcRenderer.send('shell:open-external', url),
   setOverlay: (dataUrl, count) => ipcRenderer.send('shell:overlay', dataUrl, count),
   onState: (handler) => {

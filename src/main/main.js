@@ -5,7 +5,7 @@
 //   Dev:    npm start        (electron .)
 //   Smoke:  npm run smoke    (PALETTE_SMOKE=<pasta> PALETTE_USER_DATA=<perfil> electron . — cria uma
 //           conta de teste, tira screenshots, grava smoke.json e sai)
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell, systemPreferences } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Store } = require('./store');
@@ -123,6 +123,7 @@ function createWindow() {
   win.on('focus', () => {
     win.flashFrame(false);
     manager.focusActive();
+    maybeCheckForUpdates();
   });
   // Fechar não encerra: no macOS a janela só some (Cmd+Q sai); no Windows/Linux fica na bandeja,
   // se a opção estiver ligada. Mensagens e chamadas continuam chegando.
@@ -177,6 +178,8 @@ function fullState() {
     colors: ACCOUNT_COLORS,
     spellOptions: spellOptions(),
     media: mediaStatus(),
+    update: { ...updateState },
+    releasesUrl: RELEASES_URL,
   };
 }
 
@@ -388,6 +391,8 @@ function registerIpc() {
   });
   ipcMain.handle('shell:set-setting', (_event, key, value) => applySetting(String(key), value));
   ipcMain.on('shell:open-privacy', () => openPrivacySettings());
+  ipcMain.handle('shell:check-update', () => checkForUpdates(true));
+  ipcMain.on('shell:install-update', () => installUpdate());
   ipcMain.on('shell:open-external', (_event, url) => {
     if (/^https?:\/\//i.test(String(url))) shell.openExternal(String(url));
   });
@@ -512,58 +517,139 @@ async function runSmoke(dir) {
 }
 
 // ---------- atualização automática (GitHub Releases, como no Vincii Canvas) ----------
-// Windows e Linux (AppImage) baixam e aplicam sozinhos; no macOS sem assinatura Apple o Squirrel não
-// consegue trocar o app, então só avisamos e abrimos a página de download. Dormente em dev e nos
-// builds do scripts/package-mac.sh (sem app-update.yml — só o electron-builder o gera).
+// Windows e Linux (AppImage e .deb) baixam e aplicam sozinhos; no macOS sem assinatura Apple o Squirrel
+// não consegue trocar o app, então só avisamos e abrimos a página de download. Dormente em dev e nos
+// builds do scripts/package-mac.sh (sem app-update.yml — só o electron-builder o gera). Verifica 8 s
+// depois de abrir, a cada hora e quando a janela volta ao foco (no máximo a cada 30 min). O estado vai
+// para Configurações › Sobre ("Verificar agora" / "Reiniciar e atualizar") e tudo fica em
+// userData/updater.log. Diagnóstico fora do app: npm run check-update.
+
+const UPDATE_CHECK_INTERVAL = 60 * 60 * 1000;
+const UPDATE_FOCUS_THROTTLE = 30 * 60 * 1000;
+const updateState = { status: 'unsupported', version: null, percent: 0, message: '', checkedAt: null };
+let autoUpdater = null;
+let lastUpdateCheck = 0;
+
+function logUpdate(...parts) {
+  const line = `${new Date().toISOString()} ${parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' ')}`;
+  console.log('[updater]', line);
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'updater.log'), `${line}\n`);
+  } catch {}
+}
+
+function setUpdateState(patch) {
+  Object.assign(updateState, patch);
+  sendState();
+}
+
+const windowVisible = () => !!win && !win.isDestroyed() && win.isVisible();
+
+function notify(title, body, onClick) {
+  if (!Notification.isSupported()) return false;
+  const notification = new Notification({ title, body });
+  notification.on('click', onClick);
+  notification.show();
+  return true;
+}
 
 function setupAutoUpdate() {
   if (!app.isPackaged || !fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'))) return;
-  let autoUpdater;
   try {
     ({ autoUpdater } = require('electron-updater'));
-  } catch {
+  } catch (e) {
+    logUpdate('electron-updater indisponível:', e.message);
     return;
   }
   autoUpdater.autoDownload = !isMac;
   autoUpdater.autoInstallOnAppQuit = !isMac;
-  autoUpdater.on('error', (err) => console.error('[updater]', err && err.message));
-  autoUpdater.on('update-available', async (info) => {
-    if (!isMac) return;
-    const { response } = await dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
-      type: 'info',
-      buttons: ['Baixar', 'Depois'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Nova versão do Palette',
-      message: `Palette ${(info && info.version) || ''} está disponível.`,
-      detail: 'Vamos abrir a página de download. Instale por cima da versão atual; as contas continuam vinculadas.',
-    });
-    if (response === 0) shell.openExternal(RELEASES_URL);
+  autoUpdater.logger = { info: (m) => logUpdate('info', m), warn: (m) => logUpdate('warn', m), error: (m) => logUpdate('error', m), debug: () => {} };
+  updateState.status = 'idle';
+  autoUpdater.on('checking-for-update', () => setUpdateState({ status: 'checking', message: '' }));
+  autoUpdater.on('update-not-available', (info) => setUpdateState({ status: 'up-to-date', version: info && info.version, checkedAt: Date.now() }));
+  autoUpdater.on('update-available', (info) => {
+    setUpdateState({ status: isMac ? 'available' : 'downloading', version: info && info.version, percent: 0, checkedAt: Date.now() });
+    if (isMac) offerDownload();
   });
-  autoUpdater.on('update-downloaded', async (info) => {
-    if (!win || win.isDestroyed()) {
-      try {
-        autoUpdater.quitAndInstall();
-      } catch {}
-      return;
-    }
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'info',
-      buttons: ['Reiniciar e atualizar', 'Depois'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Atualização pronta',
-      message: `Palette ${(info && info.version) || ''} foi baixado.`,
-      detail: 'Reiniciar agora para aplicar? A atualização também entra quando você fechar o app.',
-    });
-    if (response === 0) {
-      quitting = true;
-      autoUpdater.quitAndInstall();
-    }
+  autoUpdater.on('download-progress', (progress) => setUpdateState({ status: 'downloading', percent: Math.round((progress && progress.percent) || 0) }));
+  autoUpdater.on('update-downloaded', (info) => {
+    setUpdateState({ status: 'downloaded', version: (info && info.version) || updateState.version, percent: 100 });
+    promptRestart();
   });
-  const check = () => autoUpdater.checkForUpdates().catch((e) => console.error('[updater] verificação falhou:', e && e.message));
-  setTimeout(check, 8000);
-  setInterval(check, 6 * 60 * 60 * 1000);
+  autoUpdater.on('error', (err) => setUpdateState({ status: 'error', message: (err && err.message) || String(err), checkedAt: Date.now() }));
+  setTimeout(() => checkForUpdates(), 8000);
+  setInterval(() => checkForUpdates(), UPDATE_CHECK_INTERVAL);
+}
+
+/** Dispara a verificação; `manual` (botão) repete o aviso se a atualização já estiver baixada. */
+function checkForUpdates(manual = false) {
+  if (!autoUpdater) return Promise.resolve({ ...updateState });
+  if (updateState.status === 'downloaded') {
+    if (manual) promptRestart();
+    return Promise.resolve({ ...updateState });
+  }
+  if (updateState.status === 'checking' || updateState.status === 'downloading') return Promise.resolve({ ...updateState });
+  lastUpdateCheck = Date.now();
+  return autoUpdater
+    .checkForUpdates()
+    .then(() => ({ ...updateState }))
+    .catch((e) => {
+      setUpdateState({ status: 'error', message: (e && e.message) || String(e), checkedAt: Date.now() });
+      return { ...updateState };
+    });
+}
+
+function maybeCheckForUpdates() {
+  if (autoUpdater && Date.now() - lastUpdateCheck > UPDATE_FOCUS_THROTTLE) checkForUpdates();
+}
+
+/** macOS: só avisa e leva à página de download. */
+async function offerDownload() {
+  const version = updateState.version || '';
+  if (!windowVisible()) {
+    notify('Nova versão do Palette', `Palette ${version} está disponível. Clique para baixar.`, () => shell.openExternal(RELEASES_URL));
+    return;
+  }
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'info',
+    buttons: ['Baixar', 'Depois'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Nova versão do Palette',
+    message: `Palette ${version} está disponível.`,
+    detail: 'Vamos abrir a página de download. Instale por cima da versão atual; as contas continuam vinculadas.',
+  });
+  if (response === 0) shell.openExternal(RELEASES_URL);
+}
+
+/** Windows/Linux: atualização baixada — pergunta se reinicia agora (janela na bandeja: aviso do sistema). */
+async function promptRestart() {
+  const version = updateState.version || '';
+  if (!windowVisible()) {
+    notify('Atualização do Palette pronta', `Versão ${version} baixada. Clique para reiniciar e atualizar; ela também entra quando você fechar o app.`, () => installUpdate());
+    return;
+  }
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'info',
+    buttons: ['Reiniciar e atualizar', 'Depois'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Atualização pronta',
+    message: `Palette ${version} foi baixado.`,
+    detail: 'Reiniciar agora para aplicar? A atualização também entra quando você fechar o app.',
+  });
+  if (response === 0) installUpdate();
+}
+
+function installUpdate() {
+  if (!autoUpdater || updateState.status !== 'downloaded') return;
+  quitting = true;
+  try {
+    autoUpdater.quitAndInstall();
+  } catch (e) {
+    logUpdate('quitAndInstall falhou:', e.message);
+    quitting = false;
+  }
 }
 
 // ---------- ciclo de vida ----------
