@@ -54,7 +54,7 @@ class AccountManager extends EventEmitter {
   list() {
     return this.accounts.map((a) => {
       const entry = this.entries.get(a.id);
-      return { id: a.id, name: a.name, color: a.color, muted: !!a.muted, unread: entry?.unread ?? 0, loaded: !!entry?.loaded };
+      return { id: a.id, name: a.name, color: a.color, muted: !!a.muted, unread: entry?.unread ?? 0, loaded: !!entry?.loaded, ringing: entry?.ringing || null, audible: !!entry?.audible };
     });
   }
 
@@ -94,7 +94,7 @@ class AccountManager extends EventEmitter {
     });
     view.setBackgroundColor(BG);
     if (typeof view.setBorderRadius === 'function') view.setBorderRadius(FRAME_RADIUS);
-    const entry = { view, unread: 0, loaded: false };
+    const entry = { view, unread: 0, loaded: false, ringing: null, audible: false };
     this.entries.set(account.id, entry);
 
     const wc = view.webContents;
@@ -128,6 +128,12 @@ class AccountManager extends EventEmitter {
     });
     wc.on('render-process-gone', (_event, details) => {
       if (details.reason !== 'clean-exit') setTimeout(() => !wc.isDestroyed() && wc.loadURL(WA_URL), 1000);
+    });
+    // Som tocando na conta (toque de chamada, mensagem, áudio): pontinho no avatar quando ela não é a ativa
+    wc.on('audio-state-changed', (event) => {
+      if (entry.audible === !!event.audible) return;
+      entry.audible = !!event.audible;
+      this.emit('change', this.state());
     });
     wc.on('context-menu', (_event, params) => this.showPageContextMenu(wc, params));
 
@@ -274,6 +280,20 @@ class AccountManager extends EventEmitter {
   devTools(id = this.activeId) {
     const entry = id ? this.entries.get(id) : null;
     if (entry) entry.view.webContents.toggleDevTools();
+  }
+
+  setRinging(id, text) {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    entry.ringing = text || 'Chamada recebida';
+    this.emit('change', this.state());
+  }
+
+  clearRinging(id) {
+    const entry = this.entries.get(id);
+    if (!entry || !entry.ringing) return;
+    entry.ringing = null;
+    this.emit('change', this.state());
   }
 
   pushMuted(id) {

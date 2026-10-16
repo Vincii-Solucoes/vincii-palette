@@ -34,7 +34,7 @@ const DEFAULTS = {
   accounts: [],
   activeId: null,
   bounds: null,
-  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark' },
+  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true },
 };
 
 if (process.env.PALETTE_USER_DATA) app.setPath('userData', path.resolve(process.env.PALETTE_USER_DATA));
@@ -286,6 +286,9 @@ function applySetting(key, value) {
     case 'theme':
       settings.theme = THEMES.includes(value) ? value : 'dark';
       break;
+    case 'switchOnCall':
+      settings.switchOnCall = !!value;
+      break;
     case 'protocolDefault':
       if (app.isPackaged) {
         if (value) app.setAsDefaultProtocolClient(PROTOCOL);
@@ -401,6 +404,30 @@ function registerIpc() {
     const total = Number(count) || 0;
     win.setOverlayIcon(dataUrl && total ? nativeImage.createFromDataURL(String(dataUrl)) : null, total ? `${total} não lidas` : '');
   });
+  // Chamada recebida numa conta: marca o avatar, troca para ela (opção), traz a janela e avisa pelo sistema
+  ipcMain.on('wa:incoming-call', (event, text) => {
+    const id = manager.idOf(event.sender);
+    const account = id && manager.find(id);
+    if (!account) return;
+    const detail = String(text || '').slice(0, 120);
+    manager.setRinging(id, detail);
+    if (store.get('settings').switchOnCall !== false && manager.activeId !== id) manager.select(id);
+    if (win && !win.isDestroyed()) {
+      if (!win.isVisible()) showWindow();
+      else if (!win.isFocused()) win.flashFrame(true);
+    }
+    if (isMac && (!win || !win.isFocused())) app.dock.bounce('critical');
+    if (!win || win.isDestroyed() || !win.isFocused()) {
+      notify(`Chamada recebida · ${account.name}`, detail || 'Alguém está ligando no WhatsApp.', () => {
+        manager.select(id);
+        showWindow();
+      });
+    }
+  });
+  ipcMain.on('wa:call-ended', (event) => {
+    const id = manager.idOf(event.sender);
+    if (id) manager.clearRinging(id);
+  });
   // Clique numa notificação do WhatsApp: traz a janela e mostra a conta de origem
   ipcMain.on('wa:notification-click', (event) => {
     const id = manager.idOf(event.sender);
@@ -484,6 +511,28 @@ async function runSmoke(dir) {
   info.manager.secondActive = manager.activeId === second.id;
   manager.cycle(1);
   info.manager.cycledBackToFirst = manager.activeId === first;
+  // Chamada recebida simulada na conta inativa: aviso com texto + botões, como o WhatsApp Web desenha
+  const secondEntry = manager.entries.get(second.id);
+  await new Promise((resolve) => {
+    if (secondEntry.loaded) return resolve();
+    secondEntry.view.webContents.once('did-finish-load', resolve);
+    setTimeout(resolve, 25000);
+  });
+  await delay(1500);
+  const secondJs = (code) => secondEntry.view.webContents.executeJavaScript(code, true).catch((e) => `erro: ${e.message}`);
+  await secondJs(`(() => { const d = document.createElement('div'); d.id = 'palette-fake-call'; d.innerHTML = '<p>Chamada de voz recebida</p><p>Fulano</p><button aria-label="Aceitar">Aceitar</button><button>Recusar</button>'; document.body.appendChild(d); return true; })()`);
+  await delay(800);
+  await shot('ringing.png', win.webContents);
+  info.call = {
+    ringing: secondEntry.ringing,
+    switchedToSecond: manager.activeId === second.id,
+    railRinging: await shellJs(`!!document.querySelector('.acc.ringing')`),
+  };
+  await secondJs(`document.getElementById('palette-fake-call').remove()`);
+  await delay(2500);
+  info.call.clearedAfterRemove = !secondEntry.ringing;
+  info.call.railCleared = await shellJs(`!document.querySelector('.acc.ringing')`);
+  manager.select(first);
   manager.reorder([second.id, first]);
   await delay(300);
   info.manager.order = manager.accounts.map((a) => a.name).join(',');

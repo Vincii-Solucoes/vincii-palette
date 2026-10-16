@@ -9,6 +9,7 @@ Mensagens, notificações e chamadas de todas as contas continuam chegando em se
 - **Multiconta**: adicione quantos números quiser (nome e cor por conta), troque com um clique ou ⌘/Ctrl+1…9, reordene arrastando.
 - **Chamadas de voz e vídeo** direto na conta (o app libera câmera, microfone e compartilhamento de tela para o WhatsApp Web).
 - **Notificações do sistema** por conta (clique traz a janela já na conta certa), contador de não lidas no Dock/barra de tarefas, opção de silenciar conta.
+- **Chamada recebida**: o avatar da conta pisca com um telefone, o app troca para ela (opção) e avisa pelo sistema se a janela não estiver em foco; contas inativas com som tocando mostram um pontinho.
 - Visual Vincii: barra lateral escura, conta ativa numa moldura arredondada e WhatsApp em tema escuro por padrão (Claro ou Sistema nas configurações).
 - Corretor ortográfico, zoom por conta, links externos no navegador, downloads direto na pasta Downloads, início com o sistema, bandeja (Windows/Linux), links `whatsapp://` "clique para conversar".
 

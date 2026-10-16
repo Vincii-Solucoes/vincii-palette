@@ -22,6 +22,7 @@ const el = (tag, attrs = {}, children = []) => {
 };
 
 const ICONS = {
+  phone: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1L6.6 10.8z"/></svg>',
   mute: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.7 21a2 2 0 0 1-3.4 0"/><path d="M18.6 13A17.9 17.9 0 0 1 18 8"/><path d="M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M1 1l22 22"/></svg>',
 };
 const MEDIA_LABELS = {
@@ -94,13 +95,18 @@ function renderRail() {
     if (account.id === state.activeId) classes.push('active');
     if (account.muted) classes.push('muted');
     if (!account.loaded) classes.push('loading');
+    if (account.ringing) classes.push('ringing');
+    else if (account.audible && account.id !== state.activeId) classes.push('audible');
     const button = el('button', {
       type: 'button',
       class: classes.join(' '),
       'data-id': account.id,
-      title: `${account.name}${index < 9 ? ` (${shortcut(index + 1)})` : ''} · duplo clique ou botão direito: nome, cor, silenciar`,
+      title: `${account.ringing ? 'Chamada recebida · ' : ''}${account.name}${index < 9 ? ` (${shortcut(index + 1)})` : ''} · duplo clique ou botão direito: nome, cor, silenciar`,
       draggable: true,
-      onclick: () => api.select(account.id),
+      onclick: () => {
+        if (modal) closeModal();
+        api.select(account.id);
+      },
       ondblclick: () => openModal({ type: 'account', id: account.id }),
       oncontextmenu: (event) => {
         event.preventDefault();
@@ -111,6 +117,8 @@ function renderRail() {
     button.append(el('span', { class: 'avatar', text: initials(account.name) }));
     if (account.unread) button.append(el('span', { class: 'badge', text: account.unread > 99 ? '99+' : String(account.unread) }));
     if (account.muted) button.append(el('span', { class: 'mute', html: ICONS.mute }));
+    if (account.ringing) button.append(el('span', { class: 'call', html: ICONS.phone }));
+    else if (account.audible && account.id !== state.activeId) button.append(el('span', { class: 'audible' }));
 
     button.addEventListener('dragstart', (event) => {
       dragId = account.id;
@@ -262,6 +270,14 @@ function settingsPanel() {
       onchange: (value) => api.setSetting('startAtLogin', value),
     }),
   );
+  items.push(
+    toggle({
+      label: 'Trocar para a conta que recebe a chamada',
+      hint: 'Ao tocar, a conta vem para a frente; o avatar pisca com um telefone de qualquer jeito.',
+      checked: settings.switchOnCall !== false,
+      onchange: (value) => api.setSetting('switchOnCall', value),
+    }),
+  );
   if (!mac) {
     items.push(
       toggle({
@@ -376,6 +392,10 @@ $('#add').addEventListener('click', () => openModal({ type: 'account' }));
 $('#settings').addEventListener('click', () => (modal && modal.type === 'settings' ? closeModal() : openModal({ type: 'settings' })));
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && modal) dismiss();
+});
+// Clique fora do painel (no fundo escuro) fecha o diálogo
+$('#content').addEventListener('click', (event) => {
+  if (modal && (event.target === event.currentTarget || event.target.classList.contains('drag-strip'))) dismiss();
 });
 // Links dentro da área de conteúdo abrem no navegador
 document.addEventListener('click', (event) => {
