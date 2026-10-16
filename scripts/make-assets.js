@@ -82,8 +82,14 @@ async function write(file, buffer) {
   console.log('ok', path.relative(ROOT, file));
 }
 
+const LINUX_SIZES = [16, 24, 32, 48, 64, 96, 128, 256, 512];
+
 (async () => {
-  await write(path.join(ROOT, 'build', 'icon.png'), await icon(1024));
+  const master = await icon(1024);
+  await write(path.join(ROOT, 'build', 'icon.png'), master);
+  // Linux: electron-builder instala cada tamanho em /usr/share/icons/hicolor/<N>x<N>/apps (um PNG só de
+  // 1024px ficava numa pasta que os temas não consultam e o launcher mostrava o ícone genérico)
+  for (const size of LINUX_SIZES) await write(path.join(ROOT, 'build', 'icons', `${size}x${size}.png`), await sharp(master).resize(size, size).png().toBuffer());
   const tray = path.join(ROOT, 'assets', 'tray');
   await write(path.join(tray, 'tray.png'), await sharp(bubbleIcon(32, TEAL)).png().toBuffer());
   await write(path.join(tray, 'tray@2x.png'), await sharp(bubbleIcon(64, TEAL)).png().toBuffer());

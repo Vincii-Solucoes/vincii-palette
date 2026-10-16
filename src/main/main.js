@@ -19,8 +19,11 @@ const isWin = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
 const isDev = !app.isPackaged;
 const ROOT = path.join(__dirname, '..', '..');
-const ICON_PNG = path.join(ROOT, 'build', 'icon.png');
-const TRAY_PNG = path.join(ROOT, 'assets', 'tray', 'tray.png');
+// Empacotado (electron-builder extraResources / package-mac.sh): ícone e bandeja ficam em Resources, fora
+// do asar — no Linux o ícone da janela precisa ser um arquivo real para aparecer na barra de tarefas.
+const RESOURCES = app.isPackaged ? process.resourcesPath : ROOT;
+const ICON_PNG = path.join(RESOURCES, 'build', 'icon.png');
+const TRAY_PNG = path.join(RESOURCES, 'assets', 'tray', 'tray.png');
 const SHELL_PRELOAD = path.join(__dirname, '..', 'preload', 'shell.js');
 const RENDERER_HTML = path.join(__dirname, '..', 'renderer', 'index.html');
 const SMOKE_DIR = process.env.PALETTE_SMOKE ? path.resolve(process.env.PALETTE_SMOKE) : null;
@@ -98,7 +101,7 @@ function createWindow() {
     autoHideMenuBar: !isMac, // Alt mostra o menu; os atalhos funcionam sempre
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 14 },
-    icon: isMac ? undefined : ICON_PNG,
+    icon: isMac ? undefined : nativeImage.createFromPath(ICON_PNG),
     webPreferences: {
       preload: SHELL_PRELOAD,
       contextIsolation: true,

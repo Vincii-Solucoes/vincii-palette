@@ -1,7 +1,7 @@
 {
   "name": "palette",
   "productName": "Palette",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Palette — várias contas do WhatsApp num só app, com chamadas de voz e vídeo (macOS, Windows e Linux)",
   "main": "src/main/main.js",
   "author": "Vincii <contato@vincii.com.br>",
@@ -45,13 +45,11 @@
       "assets/brand/*.png",
       "assets/fonts/*.ttf",
       "assets/tray/*.png",
-      "build/icon.png",
       "package.json"
     ],
     "asar": true,
     "asarUnpack": [
-      "assets/**",
-      "build/icon.png"
+      "assets/**"
     ],
     "npmRebuild": false,
     "electronLanguages": [
@@ -132,7 +130,18 @@
         "entry": {
           "StartupWMClass": "Palette"
         }
+      },
+      "icon": "build/icons"
+    },
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "build/icon.png"
+      },
+      {
+        "from": "assets/tray",
+        "to": "assets/tray"
       }
-    }
+    ]
   }
 }
