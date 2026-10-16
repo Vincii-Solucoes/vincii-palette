@@ -21,8 +21,7 @@ const USER_AGENT = `Mozilla/5.0 (${PLATFORM_UA[process.platform] || PLATFORM_UA.
 const ALLOWED_PERMISSIONS = new Set([
   'media',
   'notifications',
-  'clipboard-sanitized-write',
-  'clipboard-read',
+  'clipboard-sanitized-write', // colar continua funcionando sem 'clipboard-read' (ler a área de transferência fica negado)
   'fullscreen',
   'display-capture',
   'speaker-selection',
@@ -111,7 +110,8 @@ function configureSession(ses, { spellLanguages } = {}) {
 
   // Downloads (fotos, documentos) vão direto para a pasta Downloads, sem diálogo, como no app oficial.
   ses.on('will-download', (_event, item) => {
-    const name = (item.getFilename() || 'arquivo').replace(/[\\/:*?"<>|]/g, '_');
+    // Sem separadores, caracteres de controle ou nomes só de pontos (".." viraria a pasta de cima)
+    const name = (item.getFilename() || 'arquivo').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/^\.+$/, '').trim() || 'arquivo';
     const target = uniquePath(app.getPath('downloads'), name);
     item.setSavePath(target);
     item.once('done', (_e, state) => {

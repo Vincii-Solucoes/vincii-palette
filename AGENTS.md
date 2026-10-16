@@ -23,6 +23,15 @@ App **desktop multiplataforma** (Electron 41, JavaScript puro, sem framework) qu
 - `src/main/store.js` — JSON em `userData/palette.json` (contas, limites da janela, configurações), gravação atômica com debounce.
 - Atalhos: ⌘/Ctrl+1…9 conta N, Ctrl+Tab/Ctrl+Shift+Tab alternar, ⌘/Ctrl+Shift+N nova conta, ⌘/Ctrl+R recarregar conta, ⌘/Ctrl+, configurações, ⌘/Ctrl+=/−/0 zoom da conta ativa.
 
+## Segurança (modelo e decisões)
+
+- Conteúdo remoto só nas views do WhatsApp: `contextIsolation` + `sandbox` + sem `nodeIntegration`; o preload não expõe nada no `window` (comunicação página → preload por eventos DOM/atributos; o preload fala com o main por canais `wa:*`, cujo remetente é conferido com `manager.idOf`). A barra lateral é arquivo local com CSP `default-src 'self'`; os canais `shell:*` só aceitam o `webContents` da janela principal (`fromShell`).
+- Navegação das views presa a `web.whatsapp.com` (`will-navigate`, `will-redirect` do frame principal, `setWindowOpenHandler` por view e global em `web-contents-created`, `<webview>` bloqueado); links externos só `http(s)` e sempre no navegador do sistema (inclusive no menu de contexto).
+- Permissões concedidas só à origem do WhatsApp: mídia (com TCC no macOS), notificações, clipboard-write, fullscreen, captura de tela, seleção de alto-falante. `clipboard-read` e o resto são negados.
+- Downloads vão direto para Downloads com nome saneado (sem separadores/controles/"..", sem sobrescrever). Links `whatsapp://` viram sempre `https://web.whatsapp.com/send/?…` com parâmetros reencodados.
+- Updater: HTTPS do GitHub + sha512 do `latest*.yml` (electron-updater); sem assinatura de código (Windows/mac avisam na 1ª abertura). Fuses nos builds do electron-builder: `runAsNode`, `NODE_OPTIONS` e `--inspect` desligados, `onlyLoadAppFromAsar` — aplicados em `build/afterPack.js` com `@electron/fuses`, antes da assinatura ad-hoc, porque o `electronFuses` do electron-builder rodaria depois do hook e invalidaria a assinatura (o `package-mac.sh` usa o binário puro, sem fuses). `enableCookieEncryption` ficou de fora de propósito: no Linux dispara o chaveiro e a sessão do WhatsApp nem usa cookies (IndexedDB).
+- Dados: tudo fica no perfil do usuário (`userData`); nada de telemetria; `npm audit --omit=dev` limpo (as advisories restantes são do ferramental de build). Electron na última versão de patch da linha 41 (`^41.10.7`).
+
 ## Convenções e armadilhas
 
 - Cores só da paleta em `src/main/constants.js` (`ACCOUNT_COLORS`, tokens Vincii) e `:root` do `styles.css`; não hardcode fora daí.

@@ -36,6 +36,7 @@ const MEDIA_LABELS = {
 let state = { accounts: [], activeId: null, settings: {}, platform: api.platform, colors: [], spellOptions: [], media: null, version: '', versions: {} };
 let modal = null; // { type: 'account', id? } | { type: 'settings' }
 let contentKey = '';
+let settingsKey = '';
 let dragId = null;
 let lastOverlay = -1;
 
@@ -152,11 +153,15 @@ function renderRail() {
 
 function renderContent() {
   const key = modal ? `${modal.type}:${modal.id || ''}` : state.accounts.length ? 'blank' : 'welcome';
-  // Não reconstrói o formulário a cada atualização (perderia o que está sendo digitado);
-  // as configurações são reconstruídas sempre, pois só refletem o estado.
-  if (key === contentKey && key !== 'settings:') return;
+  // Não reconstrói o formulário a cada atualização (perderia o que está sendo digitado); as configurações
+  // só são reconstruídas quando algo que elas mostram muda (não a cada som ou mensagem), mantendo a rolagem.
+  const isSettings = key === 'settings:';
+  const nextSettingsKey = isSettings ? JSON.stringify([state.settings, state.update, state.media, state.spellOptions, state.accounts.map((a) => [a.id, a.name, a.color])]) : '';
+  if (key === contentKey && (!isSettings || nextSettingsKey === settingsKey)) return;
   contentKey = key;
+  settingsKey = nextSettingsKey;
   const main = $('#content');
+  const scrollTop = isSettings ? main.scrollTop : 0;
   main.className = key;
   main.replaceChildren();
   if (key === 'blank') {
@@ -171,8 +176,10 @@ function renderContent() {
       input.focus();
       input.select();
     }
-  } else if (modal && modal.type === 'settings') main.append(settingsPanel());
-  else main.append(welcome());
+  } else if (modal && modal.type === 'settings') {
+    main.append(settingsPanel());
+    main.scrollTop = scrollTop;
+  } else main.append(welcome());
 }
 
 function welcome() {

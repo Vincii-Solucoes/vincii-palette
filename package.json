@@ -1,7 +1,7 @@
 {
   "name": "palette",
   "productName": "Palette",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Palette — várias contas do WhatsApp num só app, com chamadas de voz e vídeo (macOS, Windows e Linux)",
   "main": "src/main/main.js",
   "author": "Vincii <contato@vincii.com.br>",
@@ -29,7 +29,8 @@
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
-    "electron": "^41.7.1",
+    "@electron/fuses": "^1.8.0",
+    "electron": "^41.10.7",
     "electron-builder": "^26.15.3",
     "sharp": "^0.35.3"
   },

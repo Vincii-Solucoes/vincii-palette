@@ -72,6 +72,14 @@ function startRinging(node, text) {
   ringing.timeout = setTimeout(stopRinging, node ? 90000 : 45000);
 }
 
+// Nó com mais de 80 elementos não é o aviso de chamada: descarta sem montar o texto (custo constante)
+function smallEnough(node) {
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
+  let count = 0;
+  while (walker.nextNode()) if (++count > 80) return false;
+  return true;
+}
+
 const describe = (node) => {
   const labels = Array.from(node.querySelectorAll('[aria-label]'), (el) => el.getAttribute('aria-label')).join(' ');
   return `${node.textContent || ''} ${labels}`;
@@ -81,7 +89,7 @@ const observer = new MutationObserver((mutations) => {
   if (ringing) return;
   for (const mutation of mutations) {
     for (const node of mutation.addedNodes) {
-      if (node.nodeType !== 1) continue;
+      if (node.nodeType !== 1 || !smallEnough(node)) continue;
       const text = describe(node);
       if (text.length > 600 || !CALL_RE.test(text) || !ANSWER_RE.test(text)) continue;
       startRinging(node, (node.textContent || '').trim());

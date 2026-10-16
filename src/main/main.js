@@ -153,12 +153,17 @@ function mediaStatus() {
   }
 }
 
-function isProtocolDefault() {
+// isDefaultProtocolClient consulta o sistema (no Linux roda xdg-settings): cache de 5 min, renovado ao mexer na opção
+let protocolDefaultCache = { value: false, at: 0 };
+function isProtocolDefault(force = false) {
+  if (!app.isPackaged) return false;
+  if (!force && Date.now() - protocolDefaultCache.at < 5 * 60 * 1000) return protocolDefaultCache.value;
+  let value = false;
   try {
-    return app.isPackaged && app.isDefaultProtocolClient(PROTOCOL);
-  } catch {
-    return false;
-  }
+    value = app.isDefaultProtocolClient(PROTOCOL);
+  } catch {}
+  protocolDefaultCache = { value, at: Date.now() };
+  return value;
 }
 
 function spellOptions() {
@@ -293,6 +298,7 @@ function applySetting(key, value) {
       if (app.isPackaged) {
         if (value) app.setAsDefaultProtocolClient(PROTOCOL);
         else app.removeAsDefaultProtocolClient(PROTOCOL);
+        isProtocolDefault(true);
       }
       break;
     default:
@@ -377,29 +383,41 @@ function showAccountMenu(id) {
 }
 
 function registerIpc() {
-  ipcMain.handle('shell:ready', () => fullState());
-  ipcMain.on('shell:select', (_event, id) => manager.select(String(id)));
-  ipcMain.handle('shell:add', (_event, data) => manager.add(sanitizeAccount(data || {})).id);
-  ipcMain.handle('shell:update', (_event, id, data) => {
+  // Canais shell:* só valem vindos da barra lateral (a janela principal); as views do WhatsApp não têm
+  // ipcRenderer exposto, mas a checagem do remetente fecha a porta de vez.
+  const fromShell = (event) => !!win && !win.isDestroyed() && event.sender === win.webContents;
+  const shellHandle = (channel, handler) => ipcMain.handle(channel, (event, ...args) => (fromShell(event) ? handler(event, ...args) : null));
+  const shellOn = (channel, handler) => ipcMain.on(channel, (event, ...args) => {
+    if (fromShell(event)) handler(event, ...args);
+  });
+  const lastCallSignal = new Map(); // por conta: evita rajadas de wa:incoming-call
+  shellHandle('shell:ready', () => fullState());
+  shellOn('shell:select', (_event, id) => manager.select(String(id)));
+  shellHandle('shell:add', (_event, data) => manager.add(sanitizeAccount(data || {})).id);
+  shellHandle('shell:update', (_event, id, data) => {
     const { name, color } = sanitizeAccount(data || {}, manager.find(String(id)) || {});
     return !!manager.update(String(id), { name, color });
   });
-  ipcMain.handle('shell:remove', (_event, id) => confirmRemove(String(id)));
-  ipcMain.on('shell:reorder', (_event, ids) => manager.reorder(Array.isArray(ids) ? ids.map(String) : []));
-  ipcMain.on('shell:reload', (_event, id) => manager.reload(String(id)));
-  ipcMain.on('shell:context-menu', (_event, id) => showAccountMenu(String(id)));
-  ipcMain.on('shell:modal', (_event, open) => {
+  shellHandle('shell:remove', (_event, id) => confirmRemove(String(id)));
+  shellOn('shell:reorder', (_event, ids) => manager.reorder(Array.isArray(ids) ? ids.map(String) : []));
+  shellOn('shell:reload', (_event, id) => manager.reload(String(id)));
+  shellOn('shell:context-menu', (_event, id) => showAccountMenu(String(id)));
+  shellOn('shell:modal', (_event, open) => {
     manager.setModalOpen(!!open);
-    if (open && win && !win.isDestroyed()) win.webContents.focus();
+    if (open && win && !win.isDestroyed()) {
+      win.webContents.focus();
+      isProtocolDefault(true); // o painel de configurações mostra o valor atual
+      sendState();
+    }
   });
-  ipcMain.handle('shell:set-setting', (_event, key, value) => applySetting(String(key), value));
-  ipcMain.on('shell:open-privacy', () => openPrivacySettings());
-  ipcMain.handle('shell:check-update', () => checkForUpdates(true));
-  ipcMain.on('shell:install-update', () => installUpdate());
-  ipcMain.on('shell:open-external', (_event, url) => {
+  shellHandle('shell:set-setting', (_event, key, value) => applySetting(String(key), value));
+  shellOn('shell:open-privacy', () => openPrivacySettings());
+  shellHandle('shell:check-update', () => checkForUpdates(true));
+  shellOn('shell:install-update', () => installUpdate());
+  shellOn('shell:open-external', (_event, url) => {
     if (/^https?:\/\//i.test(String(url))) shell.openExternal(String(url));
   });
-  ipcMain.on('shell:overlay', (_event, dataUrl, count) => {
+  shellOn('shell:overlay', (_event, dataUrl, count) => {
     if (!isWin || !win || win.isDestroyed()) return;
     const total = Number(count) || 0;
     win.setOverlayIcon(dataUrl && total ? nativeImage.createFromDataURL(String(dataUrl)) : null, total ? `${total} não lidas` : '');
@@ -409,6 +427,8 @@ function registerIpc() {
     const id = manager.idOf(event.sender);
     const account = id && manager.find(id);
     if (!account) return;
+    if (Date.now() - (lastCallSignal.get(id) || 0) < 5000) return;
+    lastCallSignal.set(id, Date.now());
     const detail = String(text || '').slice(0, 120);
     manager.setRinging(id, detail);
     if (store.get('settings').switchOnCall !== false && manager.activeId !== id) manager.select(id);
@@ -704,6 +724,14 @@ function installUpdate() {
 // ---------- ciclo de vida ----------
 
 function main() {
+  // Endurecimento global: nenhum webContents abre janelas novas (links http(s) vão para o navegador) nem anexa <webview>
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', (event) => event.preventDefault());
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      return { action: 'deny' };
+    });
+  });
   app.on('second-instance', (_event, argv) => {
     const url = protocolUrlFromArgv(argv);
     if (url) handleProtocolUrl(url);

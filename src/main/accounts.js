@@ -37,8 +37,9 @@ class AccountManager extends EventEmitter {
     this.modalOpen = false;
     this.accounts = Array.isArray(store.get('accounts')) ? store.get('accounts') : [];
     this.activeId = store.get('activeId') ?? null;
-    for (const account of this.accounts) this.mount(account);
     if (!this.accounts.some((a) => a.id === this.activeId)) this.activeId = this.accounts[0]?.id ?? null;
+    let later = 0;
+    for (const account of this.accounts) this.mount(account, { delay: account.id === this.activeId ? 0 : 1200 * ++later });
     this.layout();
     this.applyVisibility();
   }
@@ -78,7 +79,7 @@ class AccountManager extends EventEmitter {
 
   // ---------- views ----------
 
-  mount(account) {
+  mount(account, { delay = 0 } = {}) {
     const partition = partitionOf(account.id);
     configureSession(session.fromPartition(partition), { spellLanguages: this.settings.spellLanguages });
     const view = new WebContentsView({
@@ -100,13 +101,18 @@ class AccountManager extends EventEmitter {
     const wc = view.webContents;
     wc.setUserAgent(USER_AGENT);
     wc.setWindowOpenHandler(({ url }) => {
-      if (/^https?:/i.test(url)) shell.openExternal(url);
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
       return { action: 'deny' };
     });
+    // A view só navega dentro do WhatsApp Web; qualquer outro destino (clique ou redirecionamento do
+    // servidor) é bloqueado e, se for http(s), vai para o navegador do sistema.
     wc.on('will-navigate', (event, url) => {
-      if (url.startsWith(WA_ORIGIN) || url.startsWith('data:')) return;
+      if (url.startsWith(WA_ORIGIN)) return;
       event.preventDefault();
-      if (/^https?:/i.test(url)) shell.openExternal(url);
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    });
+    wc.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
+      if (isMainFrame && !url.startsWith(WA_ORIGIN)) event.preventDefault();
     });
     // O WhatsApp Web põe as não lidas no título: "(3) WhatsApp"
     wc.on('page-title-updated', (_event, title) => {
@@ -119,6 +125,7 @@ class AccountManager extends EventEmitter {
     });
     wc.on('did-finish-load', () => {
       entry.loaded = true;
+      entry.crashes = 0;
       this.pushMuted(account.id);
       this.emit('change', this.state());
     });
@@ -126,8 +133,12 @@ class AccountManager extends EventEmitter {
       if (!isMainFrame || code === -3) return; // -3 = navegação abortada (normal)
       wc.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(offlineHtml(description)));
     });
+    // Renderer caiu: recarrega com recuo crescente e desiste depois de 3 vezes seguidas (evita laço de crash)
     wc.on('render-process-gone', (_event, details) => {
-      if (details.reason !== 'clean-exit') setTimeout(() => !wc.isDestroyed() && wc.loadURL(WA_URL), 1000);
+      if (details.reason === 'clean-exit') return;
+      entry.crashes = (entry.crashes || 0) + 1;
+      if (entry.crashes > 3) return console.error(`[contas] ${account.name}: renderer caiu ${entry.crashes}x (${details.reason}); use Recarregar`);
+      setTimeout(() => !wc.isDestroyed() && wc.loadURL(WA_URL), 1500 * entry.crashes);
     });
     // Som tocando na conta (toque de chamada, mensagem, áudio): pontinho no avatar quando ela não é a ativa
     wc.on('audio-state-changed', (event) => {
@@ -138,7 +149,8 @@ class AccountManager extends EventEmitter {
     wc.on('context-menu', (_event, params) => this.showPageContextMenu(wc, params));
 
     this.win.contentView.addChildView(view);
-    wc.loadURL(WA_URL);
+    if (delay) setTimeout(() => !wc.isDestroyed() && wc.loadURL(WA_URL), delay);
+    else wc.loadURL(WA_URL);
     return entry;
   }
 
@@ -315,7 +327,7 @@ class AccountManager extends EventEmitter {
       if (!suggestions.length) items.push({ label: 'Sem sugestões', enabled: false });
       items.push({ label: 'Adicionar ao dicionário', click: () => wc.session.addWordToSpellCheckerDictionary(params.misspelledWord) }, { type: 'separator' });
     }
-    if (params.linkURL) {
+    if (params.linkURL && /^https?:\/\//i.test(params.linkURL)) {
       items.push(
         { label: 'Abrir link no navegador', click: () => shell.openExternal(params.linkURL) },
         { label: 'Copiar link', click: () => clipboard.writeText(params.linkURL) },
