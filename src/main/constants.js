@@ -6,6 +6,9 @@ module.exports = {
   BG: '#050505',
   /** Largura da barra lateral de contas (o WhatsApp ocupa o resto da janela). */
   RAIL_WIDTH: 72,
+  /** Moldura em volta da conta ativa: margem até a barra/bordas da janela e raio dos cantos da view. */
+  FRAME_MARGIN: 12,
+  FRAME_RADIUS: 14,
   WA_URL: 'https://web.whatsapp.com/',
   WA_ORIGIN: 'https://web.whatsapp.com',
   /** Cores de conta: a paleta de acentos da identidade Vincii. */

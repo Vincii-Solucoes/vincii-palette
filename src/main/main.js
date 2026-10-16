@@ -5,7 +5,7 @@
 //   Dev:    npm start        (electron .)
 //   Smoke:  npm run smoke    (PALETTE_SMOKE=<pasta> PALETTE_USER_DATA=<perfil> electron . — cria uma
 //           conta de teste, tira screenshots, grava smoke.json e sai)
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell, systemPreferences } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Store } = require('./store');
@@ -31,7 +31,7 @@ const DEFAULTS = {
   accounts: [],
   activeId: null,
   bounds: null,
-  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES },
+  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark' },
 };
 
 if (process.env.PALETTE_USER_DATA) app.setPath('userData', path.resolve(process.env.PALETTE_USER_DATA));
@@ -166,7 +166,7 @@ function spellOptions() {
 function fullState() {
   return {
     ...manager.state(),
-    settings: { ...store.get('settings'), protocolDefault: isProtocolDefault() },
+    settings: { ...store.get('settings'), theme: currentTheme(), protocolDefault: isProtocolDefault() },
     platform: process.platform,
     isPackaged: app.isPackaged,
     version: app.getVersion(),
@@ -231,6 +231,18 @@ function onAccountsChanged(state) {
 
 // ---------- configurações ----------
 
+const THEMES = ['dark', 'light', 'system'];
+
+function currentTheme() {
+  const theme = (store.get('settings') || {}).theme;
+  return THEMES.includes(theme) ? theme : 'dark';
+}
+
+/** O WhatsApp Web segue o prefers-color-scheme: escuro por padrão combina com a barra e a moldura. */
+function applyTheme() {
+  nativeTheme.themeSource = currentTheme();
+}
+
 function setLinuxAutostart(enabled) {
   const dir = path.join(app.getPath('home'), '.config', 'autostart');
   const file = path.join(dir, 'palette.desktop');
@@ -265,6 +277,9 @@ function applySetting(key, value) {
       settings.spellLanguages = (Array.isArray(value) ? value : []).filter((l) => SPELL_LANGUAGE_OPTIONS.includes(l));
       manager.applySpellLanguages(settings.spellLanguages);
       break;
+    case 'theme':
+      settings.theme = THEMES.includes(value) ? value : 'dark';
+      break;
     case 'protocolDefault':
       if (app.isPackaged) {
         if (value) app.setAsDefaultProtocolClient(PROTOCOL);
@@ -275,6 +290,7 @@ function applySetting(key, value) {
       return fullState();
   }
   store.set('settings', settings);
+  if (key === 'theme') applyTheme();
   sendState();
   return fullState();
 }
@@ -463,6 +479,8 @@ async function runSmoke(dir) {
     patched: !!window.__palettePatched,
     notificationIsPatched: typeof Notification === 'function' && Notification.name === 'PaletteNotification',
     notificationPermission: typeof Notification === 'undefined' ? 'n/a' : Notification.permission,
+    prefersDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+    bodyBackground: getComputedStyle(document.body).backgroundColor,
     hasCanvas: !!document.querySelector('canvas'),
     text: document.body.innerText.replace(/\\s+/g, ' ').trim().slice(0, 500),
   }))()`);
@@ -554,6 +572,7 @@ function main() {
 
   app.whenReady().then(async () => {
     store = new Store(path.join(app.getPath('userData'), 'palette.json'), DEFAULTS);
+    applyTheme();
     app.setAboutPanelOptions({
       applicationName: APP_NAME,
       applicationVersion: app.getVersion(),

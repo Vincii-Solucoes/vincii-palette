@@ -9,6 +9,7 @@ Mensagens, notificações e chamadas de todas as contas continuam chegando em se
 - **Multiconta**: adicione quantos números quiser (nome e cor por conta), troque com um clique ou ⌘/Ctrl+1…9, reordene arrastando.
 - **Chamadas de voz e vídeo** direto na conta (o app libera câmera, microfone e compartilhamento de tela para o WhatsApp Web).
 - **Notificações do sistema** por conta (clique traz a janela já na conta certa), contador de não lidas no Dock/barra de tarefas, opção de silenciar conta.
+- Visual Vincii: barra lateral escura, conta ativa numa moldura arredondada e WhatsApp em tema escuro por padrão (Claro ou Sistema nas configurações).
 - Corretor ortográfico, zoom por conta, links externos no navegador, downloads direto na pasta Downloads, início com o sistema, bandeja (Windows/Linux), links `whatsapp://` "clique para conversar".
 
 > Cada conta usa um dos **4 aparelhos vinculados** que o WhatsApp permite por número (no celular: *Dispositivos conectados › Conectar dispositivo*). O Palette não usa nenhum protocolo não oficial nem automatiza nada — é o WhatsApp Web, organizado.

@@ -144,7 +144,10 @@ function renderContent() {
   const main = $('#content');
   main.className = key;
   main.replaceChildren();
-  if (key === 'blank') return;
+  if (key === 'blank') {
+    main.append(el('div', { class: 'frame' })); // moldura em volta da conta ativa (a view nativa fica por cima)
+    return;
+  }
   if (state.platform === 'darwin') main.append(el('div', { class: 'drag-strip' }));
   if (modal && modal.type === 'account') {
     main.append(accountForm(modal.id));
@@ -251,6 +254,14 @@ function settingsPanel() {
       disabled: !state.isPackaged,
       onchange: (value) => api.setSetting('protocolDefault', value),
     }),
+  );
+
+  items.push(el('h3', { text: 'Aparência' }));
+  items.push(el('p', { class: 'hint small', text: 'O WhatsApp segue este tema; "Sistema" acompanha o modo claro/escuro do computador.' }));
+  items.push(
+    el('div', { class: 'chips' }, [['dark', 'Escuro'], ['light', 'Claro'], ['system', 'Sistema']].map(([value, label]) =>
+      el('button', { type: 'button', class: `chip${(settings.theme || 'dark') === value ? ' on' : ''}`, text: label, onclick: () => api.setSetting('theme', value) }),
+    )),
   );
 
   if (!mac && state.spellOptions.length) {

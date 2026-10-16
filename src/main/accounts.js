@@ -7,7 +7,7 @@ const { EventEmitter } = require('node:events');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { Menu, WebContentsView, clipboard, session, shell } = require('electron');
-const { RAIL_WIDTH, WA_URL, WA_ORIGIN, ACCOUNT_COLORS, BG, MAX_NAME_LENGTH } = require('./constants');
+const { RAIL_WIDTH, FRAME_MARGIN, FRAME_RADIUS, WA_URL, WA_ORIGIN, ACCOUNT_COLORS, BG, MAX_NAME_LENGTH } = require('./constants');
 const { configureSession, applySpellLanguages, USER_AGENT } = require('./wa-session');
 
 const PRELOAD = path.join(__dirname, '..', 'preload', 'whatsapp.js');
@@ -93,6 +93,7 @@ class AccountManager extends EventEmitter {
       },
     });
     view.setBackgroundColor(BG);
+    if (typeof view.setBorderRadius === 'function') view.setBorderRadius(FRAME_RADIUS);
     const entry = { view, unread: 0, loaded: false };
     this.entries.set(account.id, entry);
 
@@ -138,7 +139,8 @@ class AccountManager extends EventEmitter {
   layout() {
     if (!this.win || this.win.isDestroyed()) return;
     const [width, height] = this.win.getContentSize();
-    const bounds = { x: RAIL_WIDTH, y: 0, width: Math.max(0, width - RAIL_WIDTH), height };
+    // A view fica dentro da moldura; o renderer desenha borda e sombra 1px por fora dela (.frame)
+    const bounds = { x: RAIL_WIDTH + FRAME_MARGIN, y: FRAME_MARGIN, width: Math.max(0, width - RAIL_WIDTH - FRAME_MARGIN * 2), height: Math.max(0, height - FRAME_MARGIN * 2) };
     for (const { view } of this.entries.values()) view.setBounds(bounds);
   }
 
