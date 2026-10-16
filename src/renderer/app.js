@@ -71,6 +71,12 @@ function closeModal() {
   render();
 }
 
+/** Fecha o diálogo atual ou volta ao que o abriu (ex.: Editar conta aberto pelas configurações). */
+function dismiss() {
+  if (modal && modal.back) openModal({ type: modal.back });
+  else closeModal();
+}
+
 // ---------- render ----------
 
 function render() {
@@ -92,9 +98,10 @@ function renderRail() {
       type: 'button',
       class: classes.join(' '),
       'data-id': account.id,
-      title: index < 9 ? `${account.name} (${shortcut(index + 1)})` : account.name,
+      title: `${account.name}${index < 9 ? ` (${shortcut(index + 1)})` : ''} · duplo clique ou botão direito: nome, cor, silenciar`,
       draggable: true,
       onclick: () => api.select(account.id),
+      ondblclick: () => openModal({ type: 'account', id: account.id }),
       oncontextmenu: (event) => {
         event.preventDefault();
         api.contextMenu(account.id);
@@ -166,7 +173,7 @@ function welcome() {
     el('h1', { text: 'Palette' }),
     el('p', { class: 'lead', text: 'Várias contas do WhatsApp num só lugar — mensagens, notificações e chamadas de voz e vídeo.' }),
     el('ol', { class: 'steps' }, [
-      el('li', { html: '<b>Adicione uma conta</b> e dê um nome a ela (Suporte, Vendas, Pessoal…).' }),
+      el('li', { html: '<b>Adicione uma conta</b> e dê um nome e uma cor a ela (Suporte, Vendas, Pessoal…); dá para mudar depois.' }),
       el('li', { html: 'No celular desse número: <b>WhatsApp › Dispositivos conectados › Conectar dispositivo</b> e escaneie o QR code.' }),
       el('li', { html: 'Repita para cada número. Cada conta fica <b>isolada</b>, como se estivesse em outro computador.' }),
     ]),
@@ -199,7 +206,7 @@ function accountForm(id) {
       if (!name) return nameInput.focus();
       if (existing) await api.update(existing.id, { name, color });
       else await api.add({ name, color });
-      closeModal();
+      dismiss();
     },
   }, [
     el('h2', { text: existing ? 'Editar conta' : 'Nova conta' }),
@@ -207,7 +214,7 @@ function accountForm(id) {
     el('label', { class: 'field' }, [el('span', { text: 'Nome' }), nameInput]),
     el('div', { class: 'field' }, [el('span', { text: 'Cor' }), swatches]),
     el('div', { class: 'actions' }, [
-      el('button', { type: 'button', class: 'btn ghost', text: 'Cancelar', onclick: closeModal }),
+      el('button', { type: 'button', class: 'btn ghost', text: 'Cancelar', onclick: dismiss }),
       el('button', { type: 'submit', class: 'btn primary', text: existing ? 'Salvar' : 'Adicionar' }),
     ]),
   ]);
@@ -225,7 +232,26 @@ function settingsPanel() {
   const settings = state.settings || {};
   const mac = state.platform === 'darwin';
   const devHint = state.isPackaged ? '' : ' (só no app instalado)';
-  const items = [el('h2', { text: 'Configurações' }), el('h3', { text: 'Geral' })];
+  const items = [el('h2', { text: 'Configurações' })];
+
+  if (state.accounts.length) {
+    items.push(el('h3', { text: 'Contas' }));
+    items.push(el('p', { class: 'hint small', text: 'Nome e cor podem ser mudados a qualquer momento (também com duplo clique ou botão direito na barra lateral).' }));
+    for (const account of state.accounts) {
+      const avatar = el('span', { class: 'avatar mini', text: initials(account.name) });
+      avatar.style.setProperty('--c', account.color);
+      items.push(
+        el('div', { class: 'account-row' }, [
+          avatar,
+          el('b', { text: account.name, title: account.name }),
+          el('button', { type: 'button', class: 'btn ghost small', text: 'Editar', onclick: () => openModal({ type: 'account', id: account.id, back: 'settings' }) }),
+          el('button', { type: 'button', class: 'btn ghost small danger', text: 'Remover', onclick: () => api.remove(account.id) }),
+        ]),
+      );
+    }
+  }
+
+  items.push(el('h3', { text: 'Geral' }));
 
   items.push(
     toggle({
@@ -330,7 +356,7 @@ function renderOverlay() {
 $('#add').addEventListener('click', () => openModal({ type: 'account' }));
 $('#settings').addEventListener('click', () => (modal && modal.type === 'settings' ? closeModal() : openModal({ type: 'settings' })));
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && modal) closeModal();
+  if (event.key === 'Escape' && modal) dismiss();
 });
 // Links dentro da área de conteúdo abrem no navegador
 document.addEventListener('click', (event) => {

@@ -295,6 +295,24 @@ body[data-platform='darwin'] #rail { padding-top: 48px; } /* espaço para os bot
 }
 .chip.on { background: var(--teal-dim); color: var(--teal); border-color: rgba(0, 201, 177, 0.5); }
 
+.account-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.account-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.avatar.mini {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--c) 40%, transparent);
+}
+.btn.danger { color: var(--red); border-color: rgba(255, 107, 107, 0.4); }
+.btn.danger:hover { background: rgba(255, 107, 107, 0.12); color: var(--red); }
+
 .status { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .status b { font-weight: 600; }
 .status span { color: var(--muted); font-size: 13px; text-align: right; }

@@ -457,6 +457,20 @@ async function runSmoke(dir) {
   await delay(300);
   info.manager.unmutedFlagInPage = await probe('window.__paletteMuted');
   info.manager.renamedAvatar = await shellJs(`document.querySelector('.acc.active .avatar').textContent`);
+  // Configurações › Contas: botão Editar abre o formulário e Esc volta às configurações
+  await shellJs(`document.getElementById('settings').click()`);
+  await delay(400);
+  await shot('settings-accounts.png', win.webContents);
+  info.manager.accountRows = await shellJs(`document.querySelectorAll('.account-row').length`);
+  await shellJs(`document.querySelector('.account-row .btn').click()`);
+  await delay(300);
+  info.manager.editFromSettings = await shellJs('JSON.stringify(modal)');
+  await closeModal();
+  await delay(200);
+  info.manager.backToSettings = await shellJs('JSON.stringify(modal)');
+  await closeModal();
+  await delay(200);
+  info.manager.closedAgain = await shellJs('JSON.stringify(modal)');
   const second = manager.add({ name: 'Vendas', color: ACCOUNT_COLORS[3] });
   await delay(300);
   info.manager.secondActive = manager.activeId === second.id;
