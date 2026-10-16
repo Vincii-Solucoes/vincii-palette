@@ -1,0 +1,90 @@
+name: Release
+
+# Instaladores do Palette (macOS, Windows, Linux) ao enviar uma tag "vX.Y.Z" — mesmo padrão do
+# Brush e do Vincii Canvas: cada SO só compila e sobe artefatos; um job final cria UM Release com
+# tudo, neste repositório (público). Auto-update: `build.publish` do package.json aponta para cá, então o
+# electron-builder gera os `latest*.yml` que vão no Release e o electron-updater do app os consulta.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Dependências (o electron-builder baixa o Electron sozinho)
+        run: npm ci --no-audit --no-fund --ignore-scripts
+
+      - name: Compilar instaladores (sem publicar)
+        run: npx --no-install electron-builder --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            release.nosync/*.dmg
+            release.nosync/*.zip
+            release.nosync/*.exe
+            release.nosync/*.AppImage
+            release.nosync/*.deb
+            release.nosync/*.blockmap
+            release.nosync/latest*.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Criar o Release com todos os instaladores
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          shopt -s nullglob
+          files=(artifacts/*.dmg artifacts/*.zip artifacts/*.exe artifacts/*.AppImage artifacts/*.deb artifacts/*.blockmap artifacts/latest*.yml)
+          echo "Instaladores (${#files[@]}):"; printf ' - %s\n' "${files[@]}"
+          [ ${#files[@]} -gt 0 ] || { echo "Nenhum instalador"; exit 1; }
+          gh release delete "$GITHUB_REF_NAME" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
+          printf '%s\n' \
+            '## Palette' \
+            '' \
+            'Várias contas do WhatsApp num só app, com chamadas de voz e vídeo. Cada conta é um aparelho vinculado (WhatsApp › Dispositivos conectados).' \
+            '' \
+            '### macOS' \
+            'Baixe o `.dmg` (**arm64** para Apple Silicon, **x64** para Intel). O app não é assinado pela Apple, então na **primeira** abertura:' \
+            '1. Clique com o **botão direito** no app → **Abrir** → **Abrir**.' \
+            '2. Se aparecer *"está danificado"*, rode uma vez no Terminal e abra de novo:' \
+            '   ```' \
+            '   xattr -cr /Applications/Palette.app' \
+            '   ```' \
+            '' \
+            '### Windows' \
+            'Execute o `Palette-Setup-*.exe` (o SmartScreen pode pedir "Mais informações → Executar assim mesmo").' \
+            '' \
+            '### Linux' \
+            '`.AppImage` (dê permissão de execução) ou `.deb` (Debian/Ubuntu).' \
+            '' \
+            'Nas próximas versões, **Windows e Linux (AppImage) se atualizam sozinhos**; no macOS o app avisa e abre esta página.' \
+            > /tmp/notes.md
+          gh release create "$GITHUB_REF_NAME" --repo "$REPO" --title "Palette $GITHUB_REF_NAME" --notes-file /tmp/notes.md "${files[@]}"

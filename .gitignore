@@ -1,0 +1,20 @@
+# dependências (node_modules é symlink para node_modules.nosync — fora do iCloud)
+node_modules
+node_modules.nosync/
+
+# saídas de build
+release.nosync/
+release/
+dist/
+smoke.nosync/
+
+# git fora do iCloud (.git é um arquivo "gitdir: .git.nosync")
+.git.nosync/
+
+# sistema
+.DS_Store
+*.pem
+npm-debug.*
+
+# sessão local do Claude
+.claude/

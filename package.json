@@ -1,0 +1,138 @@
+{
+  "name": "palette",
+  "productName": "Palette",
+  "version": "1.0.0",
+  "description": "Palette — várias contas do WhatsApp num só app, com chamadas de voz e vídeo (macOS, Windows e Linux)",
+  "main": "src/main/main.js",
+  "author": "Vincii <contato@vincii.com.br>",
+  "license": "UNLICENSED",
+  "private": true,
+  "homepage": "https://vincii.com.br",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vincii-Solucoes/vincii-palette"
+  },
+  "scripts": {
+    "start": "electron .",
+    "smoke": "node scripts/smoke.js",
+    "assets": "node scripts/make-assets.js",
+    "pack": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "mac:pack": "scripts/package-mac.sh",
+    "mac:install": "scripts/package-mac.sh --install"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^41.7.1",
+    "electron-builder": "^26.15.3",
+    "sharp": "^0.35.3"
+  },
+  "build": {
+    "appId": "br.com.vincii.palette",
+    "productName": "Palette",
+    "copyright": "© Vincii",
+    "directories": {
+      "buildResources": "build",
+      "output": "release.nosync"
+    },
+    "files": [
+      "src/**/*",
+      "assets/brand/*.png",
+      "assets/fonts/*.ttf",
+      "assets/tray/*.png",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "assets/**",
+      "build/icon.png"
+    ],
+    "npmRebuild": false,
+    "electronLanguages": [
+      "pt",
+      "en"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Vincii-Solucoes",
+        "repo": "vincii-palette",
+        "releaseType": "release"
+      }
+    ],
+    "afterPack": "build/afterPack.js",
+    "protocols": [
+      {
+        "name": "WhatsApp",
+        "schemes": [
+          "whatsapp"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "O Palette usa a câmera nas chamadas de vídeo do WhatsApp.",
+        "NSMicrophoneUsageDescription": "O Palette usa o microfone nas chamadas de voz e vídeo do WhatsApp.",
+        "NSAudioCaptureUsageDescription": "O Palette captura o áudio do sistema ao compartilhar a tela numa chamada."
+      },
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Palette"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "${productName}-Setup-${version}-win.${ext}",
+      "shortcutName": "Palette"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network;InstantMessaging",
+      "maintainer": "Vincii <contato@vincii.com.br>",
+      "synopsis": "Várias contas do WhatsApp num só app",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "Palette"
+        }
+      }
+    }
+  }
+}
