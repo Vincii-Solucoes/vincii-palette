@@ -158,7 +158,10 @@ body[data-platform='darwin'] #rail { padding-top: 48px; } /* espaço para os bot
 .rail-btn:hover { background: var(--card-press); color: var(--heading); }
 #add { color: var(--teal); background: var(--teal-dim); }
 #add:hover { background: rgba(0, 201, 177, 0.28); color: var(--teal); }
-.brand { width: 22px; margin-top: 8px; opacity: 0.45; -webkit-app-region: no-drag; }
+/* Marca Vincii no topo da barra: cor plena, brilho teal e um traço separando das contas */
+.rail-brand { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 4px 0 12px; }
+.rail-brand::after { content: ''; width: 36px; height: 1px; background: var(--border-strong); }
+.brand { width: 38px; filter: drop-shadow(0 0 12px rgba(0, 201, 177, 0.55)); }
 
 /* ---------- área de conteúdo (boas-vindas e diálogos; o WhatsApp cobre isso quando há conta) ---------- */
 #content {
