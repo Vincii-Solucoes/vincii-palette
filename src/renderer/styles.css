@@ -212,8 +212,12 @@ body[data-platform='darwin'] #rail { padding-top: 48px; } /* espaço para os bot
 /* Moldura da conta ativa: a view nativa começa 12px (FRAME_MARGIN) depois da barra e das bordas da
    janela, com cantos de 14px; aqui vai a borda e a sombra 1px por fora, mais o fundo escuro que
    aparece enquanto o WhatsApp carrega. As margens arrastam a janela no macOS. */
-#content.blank { padding: 0; -webkit-app-region: drag; }
+/* A área atrás da view NÃO pode ser arrastável: no macOS a região arrastável da janela engole os cliques
+   destinados à WebContentsView por cima dela (o WhatsApp ficava sem responder ao mouse). A janela se
+   arrasta pela barra lateral; a moldura (.frame) é explicitamente no-drag por garantia. */
+#content.blank { padding: 0; -webkit-app-region: no-drag; }
 .frame {
+  -webkit-app-region: no-drag;
   position: absolute;
   inset: 11px;
   border-radius: 15px;
