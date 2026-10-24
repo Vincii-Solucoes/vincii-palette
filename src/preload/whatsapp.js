@@ -115,7 +115,7 @@ function checkLogin() {
   if (state === lastLogin) return;
   lastLogin = state;
   ipcRenderer.send('wa:login-state', state);
-  if (state === true) setTimeout(sendProfilePhoto, 8000);
+  if (state === true && !lastPhotoHash) setTimeout(sendProfilePhoto, 8000); // depois disso, só a cada 10 min
 }
 
 /** Avatar do próprio usuário na navegação do WhatsApp (botão "Você"/"Perfil", imagem blob da mesma origem). */
@@ -128,7 +128,31 @@ function findProfilePhoto() {
   return null;
 }
 
-let lastPhoto = '';
+// Hash perceptual 8x8 (média de cinza): a mesma foto em outra resolução dá quase o mesmo hash, então o avatar
+// só é trocado quando a foto realmente muda (trocar à toa fazia o avatar piscar).
+function photoHash(canvas) {
+  const small = document.createElement('canvas');
+  small.width = small.height = 8;
+  const ctx = small.getContext('2d');
+  ctx.drawImage(canvas, 0, 0, 8, 8);
+  const d = ctx.getImageData(0, 0, 8, 8).data;
+  const gray = [];
+  let sum = 0;
+  for (let i = 0; i < 64; i++) {
+    const g = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+    gray.push(g);
+    sum += g;
+  }
+  const avg = sum / 64;
+  return gray.map((g) => (g >= avg ? '1' : '0')).join('');
+}
+const hamming = (a, b) => {
+  let n = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+  return n;
+};
+
+let lastPhotoHash = null;
 function sendProfilePhoto() {
   const img = findProfilePhoto();
   if (!img || !img.complete || !img.naturalWidth) return;
@@ -138,10 +162,10 @@ function sendProfilePhoto() {
     canvas.width = canvas.height = size;
     const side = Math.min(img.naturalWidth, img.naturalHeight);
     canvas.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-    const data = canvas.toDataURL('image/jpeg', 0.85);
-    if (data === lastPhoto) return;
-    lastPhoto = data;
-    ipcRenderer.send('wa:profile-photo', data);
+    const hash = photoHash(canvas);
+    if (lastPhotoHash && hamming(hash, lastPhotoHash) <= 6) return;
+    lastPhotoHash = hash;
+    ipcRenderer.send('wa:profile-photo', canvas.toDataURL('image/jpeg', 0.85));
   } catch {}
 }
 

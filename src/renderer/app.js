@@ -56,7 +56,16 @@ function paintAvatar(node, account) {
   node.dataset.sig = sig;
   node.classList.toggle('has-image', !!src && kind !== 'icon');
   if (sig.startsWith('icon:')) node.innerHTML = ACCOUNT_ICONS[account.icon][1];
-  else if (src && kind !== 'icon') node.replaceChildren(el('img', { src, alt: '', draggable: false }));
+  else if (src && kind !== 'icon') {
+    // Troca de imagem só depois de decodificada: a anterior fica na tela até lá (sem instante em branco)
+    const img = el('img', { src, alt: '', draggable: false });
+    img.decoding = 'sync';
+    const swap = () => {
+      if (node.dataset.sig === sig) node.replaceChildren(img);
+    };
+    if (node.querySelector('img') && typeof img.decode === 'function') img.decode().then(swap, swap);
+    else swap();
+  }
   else node.textContent = initials(account.name);
 }
 
@@ -527,12 +536,13 @@ function settingsPanel() {
     available: `Versão ${update.version} disponível${checked}.`,
     downloading: `Baixando a versão ${update.version}… ${update.percent || 0}%`,
     downloaded: `Versão ${update.version} baixada e pronta para instalar.`,
-    error: `Falha ao verificar: ${update.message}${checked}`,
+    error: `Falha na atualização: ${update.message}${checked}`,
   };
   const updateActions = [];
   if (update.status === 'downloaded') updateActions.push(el('button', { type: 'button', class: 'btn primary small', text: 'Reiniciar e atualizar', onclick: () => api.installUpdate() }));
   else if (update.status === 'available') updateActions.push(el('button', { type: 'button', class: 'btn primary small', text: `Baixar ${update.version}`, onclick: () => api.openExternal(state.releasesUrl) }));
-  if (['idle', 'up-to-date', 'available', 'error'].includes(update.status)) updateActions.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Verificar agora', onclick: () => api.checkUpdate() }));
+  if (update.status === 'error') updateActions.push(el('button', { type: 'button', class: 'btn primary small', text: 'Baixar manualmente', onclick: () => api.openExternal(state.releasesUrl) }));
+  if (['idle', 'up-to-date', 'available', 'error', 'checking', 'downloading'].includes(update.status)) updateActions.push(el('button', { type: 'button', class: 'btn ghost small', text: 'Verificar agora', onclick: () => api.checkUpdate() }));
 
   items.push(
     el('h3', { text: 'Sobre' }),

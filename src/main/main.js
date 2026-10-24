@@ -277,10 +277,13 @@ function updateBadges(state) {
   lastUnreadTotal = total;
 }
 
+// Mudanças em rajada (título piscando, som) viram um único envio para a barra
+let stateTimer = null;
 function onAccountsChanged(state) {
-  sendState();
-  rebuildMenu();
   updateBadges(state);
+  rebuildMenu();
+  clearTimeout(stateTimer);
+  stateTimer = setTimeout(sendState, 50);
 }
 
 // ---------- configurações ----------
@@ -705,9 +708,10 @@ async function runSmoke(dir) {
 
 const UPDATE_CHECK_INTERVAL = 60 * 60 * 1000;
 const UPDATE_FOCUS_THROTTLE = 30 * 60 * 1000;
-const updateState = { status: 'unsupported', version: null, percent: 0, message: '', checkedAt: null };
+const updateState = { status: 'unsupported', version: null, percent: 0, message: '', checkedAt: null, since: 0 };
 let autoUpdater = null;
 let lastUpdateCheck = 0;
+let updateWatchdog = null;
 
 function logUpdate(...parts) {
   const line = `${new Date().toISOString()} ${parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' ')}`;
@@ -718,7 +722,12 @@ function logUpdate(...parts) {
 }
 
 function setUpdateState(patch) {
+  if (patch.status && patch.status !== updateState.status) updateState.since = Date.now();
   Object.assign(updateState, patch);
+  // Vigia: verificação ou download que não andam viram erro (e liberam o botão) em vez de ficar "Verificando…" para sempre
+  clearTimeout(updateWatchdog);
+  if (updateState.status === 'checking') updateWatchdog = setTimeout(() => setUpdateState({ status: 'error', message: 'a verificação não respondeu em 90 s' }), 90000);
+  if (updateState.status === 'downloading') updateWatchdog = setTimeout(() => setUpdateState({ status: 'error', message: 'o download parou' }), 3 * 60 * 1000);
   sendState();
 }
 
@@ -767,7 +776,8 @@ function checkForUpdates(manual = false) {
     if (manual) promptRestart();
     return Promise.resolve({ ...updateState });
   }
-  if (updateState.status === 'checking' || updateState.status === 'downloading') return Promise.resolve({ ...updateState });
+  const stale = Date.now() - (updateState.since || 0) > 60000;
+  if ((updateState.status === 'checking' || updateState.status === 'downloading') && !(manual && stale)) return Promise.resolve({ ...updateState });
   lastUpdateCheck = Date.now();
   return autoUpdater
     .checkForUpdates()
@@ -823,11 +833,19 @@ async function promptRestart() {
 function installUpdate() {
   if (!autoUpdater || updateState.status !== 'downloaded') return;
   quitting = true;
+  // Se o app continuar aberto, a instalação não aconteceu (senha cancelada, pkexec ausente, AppImage sem permissão…)
+  const guard = setTimeout(() => {
+    quitting = false;
+    logUpdate('instalação não concluiu em 10 s');
+    setUpdateState({ status: 'error', message: 'a instalação não foi concluída (senha cancelada ou sistema sem suporte); baixe o instalador' });
+  }, 10000);
   try {
     autoUpdater.quitAndInstall();
   } catch (e) {
+    clearTimeout(guard);
     logUpdate('quitAndInstall falhou:', e.message);
     quitting = false;
+    setUpdateState({ status: 'error', message: e.message });
   }
 }
 
