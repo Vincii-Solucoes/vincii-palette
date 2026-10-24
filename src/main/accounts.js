@@ -81,7 +81,7 @@ class AccountManager extends EventEmitter {
 
   mount(account, { delay = 0 } = {}) {
     const partition = partitionOf(account.id);
-    configureSession(session.fromPartition(partition), { spellLanguages: this.settings.spellLanguages });
+    configureSession(session.fromPartition(partition), { spellLanguages: this.settings.spellLanguages, getSettings: () => this.settings });
     const view = new WebContentsView({
       webPreferences: {
         partition,

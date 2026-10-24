@@ -279,6 +279,14 @@ function settingsPanel() {
   );
   items.push(
     toggle({
+      label: 'Perguntar onde salvar os arquivos',
+      hint: 'Desligado: fotos e documentos vão direto para a pasta Downloads.',
+      checked: settings.askWhereToSave !== false,
+      onchange: (value) => api.setSetting('askWhereToSave', value),
+    }),
+  );
+  items.push(
+    toggle({
       label: 'Trocar para a conta que recebe a chamada',
       hint: 'Ao tocar, a conta vem para a frente; o avatar pisca com um telefone de qualquer jeito.',
       checked: settings.switchOnCall !== false,

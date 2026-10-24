@@ -25,6 +25,7 @@ const ALLOWED_PERMISSIONS = new Set([
   'fullscreen',
   'display-capture',
   'speaker-selection',
+  'fileSystem', // anexar/salvar pela File System Access API (showOpenFilePicker/showSaveFilePicker): sempre mediado pelo diálogo do sistema
 ]);
 
 function isWhatsApp(url) {
@@ -68,7 +69,7 @@ function uniquePath(dir, name) {
 
 const configured = new WeakSet();
 
-function configureSession(ses, { spellLanguages } = {}) {
+function configureSession(ses, { spellLanguages, getSettings = () => ({}) } = {}) {
   if (configured.has(ses)) {
     applySpellLanguages(ses, spellLanguages);
     return;
@@ -108,14 +109,17 @@ function configureSession(ses, { spellLanguages } = {}) {
 
   applySpellLanguages(ses, spellLanguages);
 
-  // Downloads (fotos, documentos) vão direto para a pasta Downloads, sem diálogo, como no app oficial.
+  // Downloads (fotos, documentos): por padrão pergunta onde salvar (diálogo do sistema, sugerindo a pasta
+  // Downloads); com a opção "Perguntar onde salvar" desligada, salva direto em Downloads sem sobrescrever.
   ses.on('will-download', (_event, item) => {
     // Sem separadores, caracteres de controle ou nomes só de pontos (".." viraria a pasta de cima)
     const name = (item.getFilename() || 'arquivo').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/^\.+$/, '').trim() || 'arquivo';
     const target = uniquePath(app.getPath('downloads'), name);
-    item.setSavePath(target);
+    const settings = getSettings() || {};
+    if (settings.askWhereToSave !== false) item.setSaveDialogOptions({ title: 'Salvar arquivo', defaultPath: target });
+    else item.setSavePath(target);
     item.once('done', (_e, state) => {
-      if (state === 'completed' && process.platform === 'darwin') app.dock.downloadFinished(target);
+      if (state === 'completed' && process.platform === 'darwin') app.dock.downloadFinished(item.getSavePath() || target);
     });
   });
 }

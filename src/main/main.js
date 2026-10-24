@@ -34,7 +34,7 @@ const DEFAULTS = {
   accounts: [],
   activeId: null,
   bounds: null,
-  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true },
+  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true, askWhereToSave: true },
 };
 
 if (process.env.PALETTE_USER_DATA) app.setPath('userData', path.resolve(process.env.PALETTE_USER_DATA));
@@ -56,7 +56,15 @@ function showWindow() {
   if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.show();
+  if (isLinux) {
+    // GNOME/KDE ignoram focus() de quem não tem a ativação do usuário (ex.: clique numa notificação):
+    // passar um instante como "sempre no topo" traz a janela à frente de qualquer jeito.
+    win.setAlwaysOnTop(true);
+    win.focus();
+    win.setAlwaysOnTop(false);
+  }
   win.focus();
+  app.focus({ steal: true });
 }
 
 function toggleWindow() {
@@ -293,6 +301,9 @@ function applySetting(key, value) {
       break;
     case 'switchOnCall':
       settings.switchOnCall = !!value;
+      break;
+    case 'askWhereToSave':
+      settings.askWhereToSave = !!value;
       break;
     case 'protocolDefault':
       if (app.isPackaged) {
