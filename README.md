@@ -55,6 +55,10 @@ O app verifica ao abrir, a cada hora e quando a janela volta ao foco. Em **Confi
 
 Cada conta é o WhatsApp Web oficial numa sessão isolada e sem acesso ao sistema (sandbox do Chromium, sem Node na página). O app não coleta nada: mensagens, mídias e a sessão ficam só no seu computador, no perfil do usuário. Links abrem no navegador do sistema, as views não saem de `web.whatsapp.com`, e o WhatsApp só recebe as permissões de que precisa (microfone, câmera, notificações, compartilhar tela). Atualizações vêm do GitHub por HTTPS com verificação de integridade. No macOS, na primeira notificação o sistema pode pedir permissão para o Palette avisar; permita para receber as mensagens com a janela minimizada ou em outra conta.
 
+## Seletor de arquivos no Linux
+
+Anexar e salvar usam o seletor do sistema. Por padrão o Palette usa o diálogo nativo (GTK/KDE), que funciona na maioria dos ambientes; nele, selecione o arquivo e clique em **Abrir** (Enter e duplo clique ainda não funcionam no Chromium). Em Configurações › Seletor de arquivos dá para trocar para o portal do sistema ou o automático, e o botão **Testar seletor agora** mostra se o diálogo abre. A troca vale na próxima abertura do app.
+
 ## Permissões de chamada
 
 Na primeira chamada o sistema pede **microfone** e **câmera** (textos em pt-BR no Info.plist). Se forem negados, *Configurações › Chamadas de voz e vídeo* mostra o estado e abre os ajustes de privacidade (macOS/Windows). Compartilhar tela usa o seletor nativo no macOS 15+; nos demais sistemas vai a tela principal.

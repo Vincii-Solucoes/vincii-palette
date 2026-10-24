@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('palette', {
   pickImage: () => ipcRenderer.invoke('shell:pick-image'),
   openPrivacy: () => ipcRenderer.send('shell:open-privacy'),
   checkUpdate: () => ipcRenderer.invoke('shell:check-update'),
+  testFileDialog: () => ipcRenderer.invoke('shell:test-file-dialog'),
   installUpdate: () => ipcRenderer.send('shell:install-update'),
   openExternal: (url) => ipcRenderer.send('shell:open-external', url),
   setOverlay: (dataUrl, count) => ipcRenderer.send('shell:overlay', dataUrl, count),

@@ -74,6 +74,7 @@ let contentKey = '';
 let settingsKey = '';
 let dragId = null;
 let lastOverlay = -1;
+let fileDialogTest = null; // resultado do último "Testar seletor" (Linux)
 
 const initials = (name) => {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -219,7 +220,7 @@ function renderContent() {
   // Não reconstrói o formulário a cada atualização (perderia o que está sendo digitado); as configurações
   // só são reconstruídas quando algo que elas mostram muda (não a cada som ou mensagem), mantendo a rolagem.
   const isSettings = key === 'settings:';
-  const nextSettingsKey = isSettings ? JSON.stringify([state.settings, state.update, state.media, state.spellOptions, state.accounts.map((a) => [a.id, a.name, a.color, a.avatar, a.icon, (a.image || '').length, (a.photo || '').length, a.needsLink])]) : '';
+  const nextSettingsKey = isSettings ? JSON.stringify([state.settings, state.update, state.media, state.spellOptions, state.accounts.map((a) => [a.id, a.name, a.color, a.avatar, a.icon, (a.image || '').length, (a.photo || '').length, a.needsLink]), fileDialogTest]) : '';
   if (key === contentKey && (!isSettings || nextSettingsKey === settingsKey)) return;
   contentKey = key;
   settingsKey = nextSettingsKey;
@@ -450,6 +451,41 @@ function settingsPanel() {
       el('button', { type: 'button', class: `chip${(settings.theme || 'dark') === value ? ' on' : ''}`, text: label, onclick: () => api.setSetting('theme', value) }),
     )),
   );
+
+  if (state.platform === 'linux') {
+    const mode = settings.fileDialog || 'gtk';
+    items.push(el('h3', { text: 'Seletor de arquivos (Linux)' }));
+    items.push(el('p', { class: 'hint small', text: `Anexar e salvar usam o seletor do sistema. "Nativo (GTK)" funciona na maioria dos ambientes — nele, selecione o arquivo e clique em Abrir, pois Enter e duplo clique ainda não funcionam no Chromium. "Portal" usa o serviço xdg-desktop-portal do ambiente. A troca vale na próxima abertura do app.${state.linux ? ` Ambiente: ${state.linux.desktop || '?'} em ${state.linux.session || '?'}; em uso agora: ${state.linux.fileDialogActive}.` : ''}` }));
+    items.push(
+      el('div', { class: 'chips' }, [['gtk', 'Nativo (GTK)'], ['portal', 'Portal do sistema'], ['auto', 'Automático']].map(([value, label]) =>
+        el('button', { type: 'button', class: `chip${mode === value ? ' on' : ''}`, text: label, onclick: () => api.setSetting('fileDialog', value) }),
+      )),
+    );
+    items.push(
+      el('div', { class: 'actions start' }, [
+        el('button', {
+          type: 'button',
+          class: 'btn ghost small',
+          text: 'Testar seletor agora',
+          disabled: !!(fileDialogTest && fileDialogTest.pending),
+          onclick: async () => {
+            fileDialogTest = { pending: true };
+            render();
+            fileDialogTest = await api.testFileDialog();
+            render();
+          },
+        }),
+      ]),
+    );
+    if (fileDialogTest) {
+      const text = fileDialogTest.pending
+        ? 'Abrindo o seletor…'
+        : fileDialogTest.ok
+          ? `O seletor abriu (${fileDialogTest.canceled ? 'fechado sem escolher' : 'arquivo escolhido'}, ${fileDialogTest.ms} ms, modo ${fileDialogTest.mode}).`
+          : 'O seletor não apareceu em 15 segundos. Troque o modo acima e abra o Palette de novo.';
+      items.push(el('p', { class: `hint small${fileDialogTest.ok === false ? ' bad' : ''}`, text }));
+    }
+  }
 
   if (!mac && state.spellOptions.length) {
     const selected = new Set(settings.spellLanguages || []);

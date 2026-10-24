@@ -36,17 +36,28 @@ const DEFAULTS = {
   accounts: [],
   activeId: null,
   bounds: null,
-  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true, askWhereToSave: true, alwaysOnTop: false, globalShortcut: false },
+  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true, askWhereToSave: true, alwaysOnTop: false, globalShortcut: false, fileDialog: 'gtk' },
 };
 
 if (process.env.PALETTE_USER_DATA) app.setPath('userData', path.resolve(process.env.PALETTE_USER_DATA));
 if (isWin) app.setAppUserModelId(APP_ID); // notificações do Windows exigem o mesmo id do atalho (electron-builder usa o appId)
 if (isLinux) app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer'); // compartilhar tela no Wayland
 
+// A loja é aberta antes do "ready" porque o seletor de arquivos do Linux é escolhido por linha de comando.
+const store = new Store(path.join(app.getPath('userData'), 'palette.json'), DEFAULTS);
+
+// Seletor de arquivos no Linux (anexar/salvar): o Chromium usa o portal XDG quando a versão instalada é
+// >= --xdg-portal-required-version (padrão 3); quando o serviço do portal não responde, o diálogo nunca
+// aparece. "gtk" (padrão) exige uma versão impossível e força o diálogo nativo GTK/KDE; "portal" aceita
+// qualquer versão; "auto" deixa o padrão do Electron. Vale a partir da próxima abertura do app.
+const FILE_DIALOG_MODES = ['gtk', 'portal', 'auto'];
+const fileDialogMode = FILE_DIALOG_MODES.includes((store.get('settings') || {}).fileDialog) ? store.get('settings').fileDialog : 'gtk';
+if (isLinux && fileDialogMode === 'gtk') app.commandLine.appendSwitch('xdg-portal-required-version', '99');
+if (isLinux && fileDialogMode === 'portal') app.commandLine.appendSwitch('xdg-portal-required-version', '1');
+
 let win = null;
 let manager = null;
 let tray = null;
-let store = null;
 let quitting = false;
 let pendingProtocolUrl = null;
 let lastUnreadTotal = 0;
@@ -213,6 +224,7 @@ function fullState() {
     media: mediaStatus(),
     update: { ...updateState },
     releasesUrl: RELEASES_URL,
+    linux: isLinux ? { desktop: process.env.XDG_CURRENT_DESKTOP || '', session: process.env.XDG_SESSION_TYPE || '', fileDialogActive: fileDialogMode } : null,
   };
 }
 
@@ -335,6 +347,12 @@ function applySetting(key, value) {
     case 'globalShortcut':
       settings.globalShortcut = !!value;
       applyGlobalShortcut(settings.globalShortcut);
+      break;
+    case 'fileDialog':
+      settings.fileDialog = FILE_DIALOG_MODES.includes(value) ? value : 'gtk';
+      if (settings.fileDialog !== fileDialogMode && win && !win.isDestroyed()) {
+        dialog.showMessageBox(win, { type: 'info', title: 'Seletor de arquivos', message: 'Seletor de arquivos alterado', detail: 'A mudança vale a partir da próxima vez que o Palette abrir. Feche e abra o app para aplicar.' });
+      }
       break;
     case 'protocolDefault':
       if (app.isPackaged) {
@@ -466,6 +484,15 @@ function registerIpc() {
   shellHandle('shell:set-setting', (_event, key, value) => applySetting(String(key), value));
   shellOn('shell:open-privacy', () => openPrivacySettings());
   shellHandle('shell:check-update', () => checkForUpdates(true));
+  // Diagnóstico do seletor de arquivos: abre o diálogo pelo processo principal (mesmo mecanismo do WhatsApp) e mede
+  shellHandle('shell:test-file-dialog', async () => {
+    const started = Date.now();
+    const result = await Promise.race([
+      dialog.showOpenDialog(win, { title: 'Teste do seletor de arquivos', buttonLabel: 'Fechar teste', properties: ['openFile'] }).then((r) => ({ ok: true, canceled: r.canceled })),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, timeout: true }), 15000)),
+    ]);
+    return { ...result, ms: Date.now() - started, mode: fileDialogMode };
+  });
   shellOn('shell:install-update', () => installUpdate());
   shellOn('shell:open-external', (_event, url) => {
     if (/^https?:\/\//i.test(String(url))) shell.openExternal(String(url));
@@ -837,7 +864,6 @@ function main() {
   });
 
   app.whenReady().then(async () => {
-    store = new Store(path.join(app.getPath('userData'), 'palette.json'), DEFAULTS);
     applyTheme();
     app.setAboutPanelOptions({
       applicationName: APP_NAME,
