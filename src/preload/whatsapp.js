@@ -104,3 +104,49 @@ document.addEventListener('palette:incoming-call', () => {
 });
 
 window.addEventListener('DOMContentLoaded', () => observer.observe(document.body, { childList: true, subtree: true }));
+
+// ---------- estado de login (QR code x app logado) e foto do perfil ----------
+let lastLogin;
+function checkLogin() {
+  const loggedIn = !!document.querySelector('#pane-side, #side');
+  const heading = document.querySelector('h1, h2');
+  const loggedOut = !loggedIn && (!!document.querySelector('div[data-ref]') || /escaneie|scan to log in|escanea para/i.test(heading ? heading.textContent : ''));
+  const state = loggedIn ? true : loggedOut ? false : null;
+  if (state === lastLogin) return;
+  lastLogin = state;
+  ipcRenderer.send('wa:login-state', state);
+  if (state === true) setTimeout(sendProfilePhoto, 8000);
+}
+
+/** Avatar do próprio usuário na navegação do WhatsApp (botão "Você"/"Perfil", imagem blob da mesma origem). */
+function findProfilePhoto() {
+  for (const img of document.querySelectorAll('img[src^="blob:"]')) {
+    const holder = img.closest('[aria-label], [title]');
+    const label = holder ? holder.getAttribute('aria-label') || holder.getAttribute('title') || '' : '';
+    if (/^(você|you|tú|usted|perfil|profile|foto do perfil|profile photo)$/i.test(label.trim())) return img;
+  }
+  return null;
+}
+
+let lastPhoto = '';
+function sendProfilePhoto() {
+  const img = findProfilePhoto();
+  if (!img || !img.complete || !img.naturalWidth) return;
+  try {
+    const size = 96;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    canvas.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+    const data = canvas.toDataURL('image/jpeg', 0.85);
+    if (data === lastPhoto) return;
+    lastPhoto = data;
+    ipcRenderer.send('wa:profile-photo', data);
+  } catch {}
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(checkLogin, 2500);
+  setInterval(checkLogin, 5000);
+  setInterval(sendProfilePhoto, 10 * 60 * 1000);
+});

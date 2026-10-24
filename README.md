@@ -6,11 +6,12 @@ O Palette é o "WhatsApp Desktop" da Vincii: uma janela com uma barra lateral de
 **WhatsApp Web oficial** rodando numa sessão isolada (como se cada número estivesse em outro computador).
 Mensagens, notificações e chamadas de todas as contas continuam chegando em segundo plano.
 
-- **Multiconta**: adicione quantos números quiser (nome e cor por conta), troque com um clique ou ⌘/Ctrl+1…9, reordene arrastando.
+- **Multiconta**: adicione quantos números quiser, cada um com nome, cor e avatar (iniciais, um ícone do conjunto, uma imagem sua ou a própria foto do perfil do WhatsApp); troque com um clique ou ⌘/Ctrl+1…9, reordene arrastando. Se uma conta cair para a tela de QR code, o avatar ganha um aviso e você recebe uma notificação.
 - **Chamadas de voz e vídeo** direto na conta (o app libera câmera, microfone e compartilhamento de tela para o WhatsApp Web).
 - **Notificações do sistema** por conta (clique traz a janela já na conta certa), contador de não lidas no Dock/barra de tarefas, opção de silenciar conta.
 - **Chamada recebida**: o avatar da conta pisca com um telefone, o app troca para ela (opção) e avisa pelo sistema se a janela não estiver em foco; contas inativas com som tocando mostram um pontinho.
 - Visual Vincii: barra lateral escura, conta ativa numa moldura arredondada e WhatsApp em tema escuro por padrão (Claro ou Sistema nas configurações).
+- Janela sempre no topo (menu Visualizar), atalho global opcional Ctrl+Shift+W (⌃⇧W) para mostrar ou esconder, ícone da bandeja com ponto vermelho quando há não lidas.
 - Corretor ortográfico, zoom por conta, links externos no navegador, downloads direto na pasta Downloads, início com o sistema, bandeja (Windows/Linux), links `whatsapp://` "clique para conversar".
 
 > Cada conta usa um dos **4 aparelhos vinculados** que o WhatsApp permite por número (no celular: *Dispositivos conectados › Conectar dispositivo*). O Palette não usa nenhum protocolo não oficial nem automatiza nada — é o WhatsApp Web, organizado.

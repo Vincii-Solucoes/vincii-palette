@@ -40,10 +40,11 @@ function badge(size) {
 </svg>`);
 }
 
-/** Balão sozinho (bandeja): teal no Windows/Linux, preto com alfa como template no macOS. */
-function bubbleIcon(size, color) {
+/** Balão sozinho (bandeja): teal no Windows/Linux, preto com alfa como template no macOS; `dot` = não lidas. */
+function bubbleIcon(size, color, { dot = false } = {}) {
   return Buffer.from(`<svg width="${size}" height="${size}" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <g transform="translate(512 512) scale(1.5) translate(-512 -569)"><path d="${BUBBLE}" fill="${color}"/>${DOTS('rgba(0,0,0,0)')}</g>
+  ${dot ? '<circle cx="800" cy="224" r="190" fill="#FF3B30" stroke="#050505" stroke-width="48"/>' : ''}
 </svg>`);
 }
 
@@ -93,6 +94,8 @@ const LINUX_SIZES = [16, 24, 32, 48, 64, 96, 128, 256, 512];
   const tray = path.join(ROOT, 'assets', 'tray');
   await write(path.join(tray, 'tray.png'), await sharp(bubbleIcon(32, TEAL)).png().toBuffer());
   await write(path.join(tray, 'tray@2x.png'), await sharp(bubbleIcon(64, TEAL)).png().toBuffer());
+  await write(path.join(tray, 'tray-unread.png'), await sharp(bubbleIcon(32, TEAL, { dot: true })).png().toBuffer());
+  await write(path.join(tray, 'tray-unread@2x.png'), await sharp(bubbleIcon(64, TEAL, { dot: true })).png().toBuffer());
   await write(path.join(tray, 'trayTemplate.png'), await sharp(bubbleIcon(16, '#000')).png().toBuffer());
   await write(path.join(tray, 'trayTemplate@2x.png'), await sharp(bubbleIcon(32, '#000')).png().toBuffer());
 })().catch((e) => {

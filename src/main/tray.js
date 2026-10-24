@@ -3,16 +3,26 @@
 // vive no Dock (como o WhatsApp Desktop), sem ícone na barra de menus.
 const { Menu, Tray, nativeImage } = require('electron');
 
-function createTray({ iconPath, onToggle, onShow, onSelect, onQuit }) {
-  let image = nativeImage.createFromPath(iconPath);
-  if (process.platform === 'win32' && !image.isEmpty()) image = image.resize({ width: 16, height: 16, quality: 'best' });
+function createTray({ iconPath, unreadIconPath, onToggle, onShow, onSelect, onQuit }) {
+  const load = (file) => {
+    let image = nativeImage.createFromPath(file);
+    if (process.platform === 'win32' && !image.isEmpty()) image = image.resize({ width: 16, height: 16, quality: 'best' });
+    return image;
+  };
+  const image = load(iconPath);
+  const unreadImage = unreadIconPath ? load(unreadIconPath) : image;
   const tray = new Tray(image);
+  let showingUnread = false;
   tray.setToolTip('Palette');
   tray.on('click', onToggle);
   tray.on('double-click', onShow);
 
   const update = (state, total) => {
     tray.setToolTip(total ? `Palette — ${total} não lida${total > 1 ? 's' : ''}` : 'Palette');
+    if (!!total !== showingUnread && !unreadImage.isEmpty()) {
+      showingUnread = !!total;
+      tray.setImage(showingUnread ? unreadImage : image);
+    }
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: 'Abrir Palette', click: onShow },

@@ -4,7 +4,7 @@ const { Menu, app, shell } = require('electron');
 
 const isMac = process.platform === 'darwin';
 
-function buildAppMenu({ accounts, actions, isDev }) {
+function buildAppMenu({ accounts, actions, isDev, alwaysOnTop = false }) {
   const accountItems = accounts.slice(0, 9).map((account, i) => ({
     label: account.name,
     accelerator: `CmdOrCtrl+${i + 1}`,
@@ -68,6 +68,7 @@ function buildAppMenu({ accounts, actions, isDev }) {
         { label: 'Tamanho real', accelerator: 'CmdOrCtrl+0', click: () => actions.zoom(0) },
         { type: 'separator' },
         { role: 'togglefullscreen', label: 'Tela cheia' },
+        { label: 'Sempre no topo', type: 'checkbox', checked: alwaysOnTop, click: (item) => actions.toggleAlwaysOnTop(item.checked) },
         ...(isDev
           ? [
               { type: 'separator' },

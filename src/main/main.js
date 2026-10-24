@@ -5,7 +5,7 @@
 //   Dev:    npm start        (electron .)
 //   Smoke:  npm run smoke    (PALETTE_SMOKE=<pasta> PALETTE_USER_DATA=<perfil> electron . — cria uma
 //           conta de teste, tira screenshots, grava smoke.json e sai)
-const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, Menu, Notification, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, screen, session, shell, systemPreferences } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Store } = require('./store');
@@ -24,6 +24,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const RESOURCES = app.isPackaged ? process.resourcesPath : ROOT;
 const ICON_PNG = path.join(RESOURCES, 'build', 'icon.png');
 const TRAY_PNG = path.join(RESOURCES, 'assets', 'tray', 'tray.png');
+const TRAY_UNREAD_PNG = path.join(RESOURCES, 'assets', 'tray', 'tray-unread.png');
+const TOGGLE_SHORTCUT = 'CommandOrControl+Shift+W';
 const SHELL_PRELOAD = path.join(__dirname, '..', 'preload', 'shell.js');
 const RENDERER_HTML = path.join(__dirname, '..', 'renderer', 'index.html');
 const SMOKE_DIR = process.env.PALETTE_SMOKE ? path.resolve(process.env.PALETTE_SMOKE) : null;
@@ -34,7 +36,7 @@ const DEFAULTS = {
   accounts: [],
   activeId: null,
   bounds: null,
-  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true, askWhereToSave: true },
+  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true, askWhereToSave: true, alwaysOnTop: false, globalShortcut: false },
 };
 
 if (process.env.PALETTE_USER_DATA) app.setPath('userData', path.resolve(process.env.PALETTE_USER_DATA));
@@ -61,10 +63,20 @@ function showWindow() {
     // passar um instante como "sempre no topo" traz a janela à frente de qualquer jeito.
     win.setAlwaysOnTop(true);
     win.focus();
-    win.setAlwaysOnTop(false);
+    win.setAlwaysOnTop(!!(store && store.get('settings').alwaysOnTop));
   }
   win.focus();
   app.focus({ steal: true });
+}
+
+/** Atalho global para mostrar/esconder (opcional): Ctrl+Shift+W (⌃⇧W no macOS). */
+function applyGlobalShortcut(enabled) {
+  try {
+    globalShortcut.unregister(TOGGLE_SHORTCUT);
+    if (enabled && !globalShortcut.register(TOGGLE_SHORTCUT, toggleWindow)) console.warn('[atalho] não foi possível registrar', TOGGLE_SHORTCUT);
+  } catch (e) {
+    console.warn('[atalho]', e.message);
+  }
 }
 
 function toggleWindow() {
@@ -124,6 +136,14 @@ function createWindow() {
 
   manager = new AccountManager({ win, store, isDev });
   manager.on('change', onAccountsChanged);
+  // Conta vinculada caiu para a página de QR code: avisa para o usuário vincular de novo
+  manager.on('logged-out', (account) => {
+    if (!account) return;
+    notify(`${account.name} foi desconectada`, 'O WhatsApp pediu para vincular o aparelho de novo. Abra a conta e escaneie o QR code.', () => {
+      manager.select(account.id);
+      showWindow();
+    });
+  });
 
   for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => manager.layout());
   win.on('resize', saveBounds);
@@ -207,14 +227,17 @@ function sendCommand(command, arg) {
 }
 
 function rebuildMenu(force = false) {
-  const key = manager.accounts.map((a) => `${a.id}:${a.name}`).join('|');
+  const alwaysOnTop = !!store.get('settings').alwaysOnTop;
+  const key = `${manager.accounts.map((a) => `${a.id}:${a.name}`).join('|')}|top:${alwaysOnTop}`;
   if (!force && key === menuKey) return;
   menuKey = key;
   Menu.setApplicationMenu(
     buildAppMenu({
       accounts: manager.accounts,
       isDev,
+      alwaysOnTop,
       actions: {
+        toggleAlwaysOnTop: (checked) => applySetting('alwaysOnTop', checked),
         select: (id) => manager.select(id),
         next: () => manager.cycle(1),
         prev: () => manager.cycle(-1),
@@ -305,6 +328,14 @@ function applySetting(key, value) {
     case 'askWhereToSave':
       settings.askWhereToSave = !!value;
       break;
+    case 'alwaysOnTop':
+      settings.alwaysOnTop = !!value;
+      if (win && !win.isDestroyed()) win.setAlwaysOnTop(settings.alwaysOnTop);
+      break;
+    case 'globalShortcut':
+      settings.globalShortcut = !!value;
+      applyGlobalShortcut(settings.globalShortcut);
+      break;
     case 'protocolDefault':
       if (app.isPackaged) {
         if (value) app.setAsDefaultProtocolClient(PROTOCOL);
@@ -317,6 +348,7 @@ function applySetting(key, value) {
   }
   store.set('settings', settings);
   if (key === 'theme') applyTheme();
+  if (key === 'alwaysOnTop') rebuildMenu();
   sendState();
   return fullState();
 }
@@ -405,9 +437,19 @@ function registerIpc() {
   shellHandle('shell:ready', () => fullState());
   shellOn('shell:select', (_event, id) => manager.select(String(id)));
   shellHandle('shell:add', (_event, data) => manager.add(sanitizeAccount(data || {})).id);
-  shellHandle('shell:update', (_event, id, data) => {
-    const { name, color } = sanitizeAccount(data || {}, manager.find(String(id)) || {});
-    return !!manager.update(String(id), { name, color });
+  shellHandle('shell:update', (_event, id, data) => !!manager.update(String(id), sanitizeAccount(data || {}, manager.find(String(id)) || {})));
+  // Imagem para o avatar: diálogo do sistema → quadrado central redimensionado para 128px (PNG em data URL)
+  shellHandle('shell:pick-image', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, { title: 'Escolher imagem', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg'] }] });
+    if (canceled || !filePaths[0]) return null;
+    const image = nativeImage.createFromPath(filePaths[0]);
+    if (image.isEmpty()) return null;
+    const { width, height } = image.getSize();
+    const side = Math.min(width, height);
+    return image
+      .crop({ x: Math.floor((width - side) / 2), y: Math.floor((height - side) / 2), width: side, height: side })
+      .resize({ width: 128, height: 128, quality: 'best' })
+      .toDataURL();
   });
   shellHandle('shell:remove', (_event, id) => confirmRemove(String(id)));
   shellOn('shell:reorder', (_event, ids) => manager.reorder(Array.isArray(ids) ? ids.map(String) : []));
@@ -458,6 +500,14 @@ function registerIpc() {
   ipcMain.on('wa:call-ended', (event) => {
     const id = manager.idOf(event.sender);
     if (id) manager.clearRinging(id);
+  });
+  ipcMain.on('wa:login-state', (event, loggedIn) => {
+    const id = manager.idOf(event.sender);
+    if (id) manager.setLoginState(id, loggedIn === true ? true : loggedIn === false ? false : null);
+  });
+  ipcMain.on('wa:profile-photo', (event, dataUrl) => {
+    const id = manager.idOf(event.sender);
+    if (id) manager.setPhoto(id, dataUrl);
   });
   // Clique numa notificação do WhatsApp: traz a janela e mostra a conta de origem
   ipcMain.on('wa:notification-click', (event) => {
@@ -523,6 +573,28 @@ async function runSmoke(dir) {
   await delay(300);
   info.manager.unmutedFlagInPage = await probe('window.__paletteMuted');
   info.manager.renamedAvatar = await shellJs(`document.querySelector('.acc.active .avatar').textContent`);
+  // Barra incremental: o botão da conta sobrevive a atualizações de estado (clique em andamento não se perde)
+  await shellJs(`document.querySelector('.acc.active').dataset.marker = 'mantido'`);
+  manager.update(first, { muted: true });
+  await delay(150);
+  manager.update(first, { muted: false });
+  await delay(300);
+  info.manager.buttonPreserved = await shellJs(`document.querySelector('.acc.active').dataset.marker === 'mantido'`);
+  info.manager.muteBadgeHidden = await shellJs(`getComputedStyle(document.querySelector('.acc.active .mute')).display === 'none' && getComputedStyle(document.querySelector('.acc.active .call')).display === 'none'`);
+  // Avatares: ícone, imagem e volta às iniciais
+  manager.update(first, { avatar: 'icon', icon: 'headset' });
+  await delay(300);
+  info.manager.iconAvatar = await shellJs(`!!document.querySelector('.acc.active .avatar svg')`);
+  manager.update(first, { avatar: 'image', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==' });
+  await delay(300);
+  info.manager.imageAvatar = await shellJs(`!!document.querySelector('.acc.active .avatar img')`);
+  manager.update(first, { avatar: 'initials', image: null });
+  await delay(300);
+  info.manager.backToInitials = await shellJs(`document.querySelector('.acc.active .avatar').textContent`);
+  // Página de QR code: a conta é marcada como "precisa vincular"
+  info.manager.loginState = manager.entries.get(first).loggedIn;
+  info.manager.railWarn = await shellJs(`!!document.querySelector('.acc.active.warn-state')`);
+  info.manager.loginPageProbe = await probe(`({ headings: Array.from(document.querySelectorAll('h1,h2,h3,[role="heading"]')).slice(0, 6).map((h) => h.tagName + ':' + h.textContent.trim().slice(0, 40)), dataRef: !!document.querySelector('div[data-ref]'), paneSide: !!document.querySelector('#pane-side, #side') })`);
   // Configurações › Contas: botão Editar abre o formulário e Esc volta às configurações
   await shellJs(`document.getElementById('settings').click()`);
   await delay(400);
@@ -755,7 +827,10 @@ function main() {
   app.on('before-quit', () => {
     quitting = true;
   });
-  app.on('will-quit', () => store && store.flush());
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+    if (store) store.flush();
+  });
   app.on('activate', () => showWindow());
   app.on('window-all-closed', () => {
     if (!isMac) app.quit();
@@ -780,6 +855,7 @@ function main() {
       try {
         tray = createTray({
           iconPath: TRAY_PNG,
+          unreadIconPath: TRAY_UNREAD_PNG,
           onToggle: toggleWindow,
           onShow: showWindow,
           onSelect: (id) => {
@@ -798,6 +874,8 @@ function main() {
     }
 
     if (!SMOKE_DIR) setupAutoUpdate();
+    if (store.get('settings').alwaysOnTop) win.setAlwaysOnTop(true);
+    if (!SMOKE_DIR) applyGlobalShortcut(!!store.get('settings').globalShortcut);
 
     let openedAtLogin = false;
     try {

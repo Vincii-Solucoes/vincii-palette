@@ -7,7 +7,7 @@ const { EventEmitter } = require('node:events');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { Menu, WebContentsView, clipboard, session, shell } = require('electron');
-const { RAIL_WIDTH, FRAME_MARGIN, FRAME_RADIUS, WA_URL, WA_ORIGIN, ACCOUNT_COLORS, BG, MAX_NAME_LENGTH } = require('./constants');
+const { RAIL_WIDTH, FRAME_MARGIN, FRAME_RADIUS, WA_URL, WA_ORIGIN, ACCOUNT_COLORS, BG, MAX_NAME_LENGTH, AVATAR_KINDS, ACCOUNT_ICON_KEYS, MAX_IMAGE_DATA_URL } = require('./constants');
 const { configureSession, applySpellLanguages, USER_AGENT } = require('./wa-session');
 
 const PRELOAD = path.join(__dirname, '..', 'preload', 'whatsapp.js');
@@ -20,11 +20,17 @@ button{background:#00C9B1;color:#03120F;border:0;border-radius:10px;padding:12px
 <body><div class="box"><h1>Sem conexão com o WhatsApp</h1><p>Não foi possível abrir web.whatsapp.com${detail ? ` (${detail})` : ''}. Verifique a rede; tentamos de novo em 15 segundos.</p>
 <button onclick="location.href='${WA_URL}'">TENTAR AGORA</button></div><script>setTimeout(function(){location.href='${WA_URL}'},15000)</script></body></html>`;
 
-/** Normaliza nome/cor vindos do renderer. */
+const IMAGE_DATA_URL = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/;
+const validImage = (value) => typeof value === 'string' && value.length <= MAX_IMAGE_DATA_URL && IMAGE_DATA_URL.test(value);
+
+/** Normaliza nome, cor e avatar (iniciais/ícone/imagem/foto) vindos do renderer; `image: null` apaga a imagem. */
 function sanitizeAccount(data = {}, fallback = {}) {
   const name = String(data.name ?? fallback.name ?? '').trim().slice(0, MAX_NAME_LENGTH);
   const color = ACCOUNT_COLORS.includes(data.color) ? data.color : fallback.color || ACCOUNT_COLORS[0];
-  return { name, color };
+  const avatar = AVATAR_KINDS.includes(data.avatar) ? data.avatar : AVATAR_KINDS.includes(fallback.avatar) ? fallback.avatar : 'initials';
+  const icon = ACCOUNT_ICON_KEYS.includes(data.icon) ? data.icon : ACCOUNT_ICON_KEYS.includes(fallback.icon) ? fallback.icon : null;
+  const image = data.image === null ? null : validImage(data.image) ? data.image : validImage(fallback.image) ? fallback.image : null;
+  return { name, color, avatar, icon, image };
 }
 
 class AccountManager extends EventEmitter {
@@ -55,7 +61,21 @@ class AccountManager extends EventEmitter {
   list() {
     return this.accounts.map((a) => {
       const entry = this.entries.get(a.id);
-      return { id: a.id, name: a.name, color: a.color, muted: !!a.muted, unread: entry?.unread ?? 0, loaded: !!entry?.loaded, ringing: entry?.ringing || null, audible: !!entry?.audible };
+      return {
+        id: a.id,
+        name: a.name,
+        color: a.color,
+        muted: !!a.muted,
+        avatar: AVATAR_KINDS.includes(a.avatar) ? a.avatar : 'initials',
+        icon: a.icon || null,
+        image: a.image || null,
+        photo: a.photo || null,
+        unread: entry?.unread ?? 0,
+        loaded: !!entry?.loaded,
+        ringing: entry?.ringing || null,
+        audible: !!entry?.audible,
+        needsLink: entry?.loggedIn === false, // página de QR code: a sessão caiu ou nunca foi vinculada
+      };
     });
   }
 
@@ -95,7 +115,7 @@ class AccountManager extends EventEmitter {
     });
     view.setBackgroundColor(BG);
     if (typeof view.setBorderRadius === 'function') view.setBorderRadius(FRAME_RADIUS);
-    const entry = { view, unread: 0, loaded: false, ringing: null, audible: false };
+    const entry = { view, unread: 0, loaded: false, ringing: null, audible: false, loggedIn: null, fullscreen: false };
     this.entries.set(account.id, entry);
 
     const wc = view.webContents;
@@ -115,13 +135,25 @@ class AccountManager extends EventEmitter {
       if (isMainFrame && !url.startsWith(WA_ORIGIN)) event.preventDefault();
     });
     // O WhatsApp Web põe as não lidas no título: "(3) WhatsApp"
+    // (ao chegar mensagem o título pisca; espera assentar para não redesenhar a barra a cada piscada)
     wc.on('page-title-updated', (_event, title) => {
       const match = /^\((\d+)\)/.exec(title);
       const unread = match ? Number(match[1]) : 0;
-      if (unread !== entry.unread) {
+      clearTimeout(entry.unreadTimer);
+      entry.unreadTimer = setTimeout(() => {
+        if (unread === entry.unread) return;
         entry.unread = unread;
         this.emit('change', this.state());
-      }
+      }, 350);
+    });
+    // Vídeo/status em tela cheia: a view ocupa a janela inteira enquanto durar e volta para a moldura depois
+    wc.on('enter-html-full-screen', () => {
+      entry.fullscreen = true;
+      this.layout();
+    });
+    wc.on('leave-html-full-screen', () => {
+      entry.fullscreen = false;
+      setTimeout(() => this.layout(), 80);
     });
     wc.on('did-finish-load', () => {
       entry.loaded = true;
@@ -159,7 +191,7 @@ class AccountManager extends EventEmitter {
     const [width, height] = this.win.getContentSize();
     // A view fica dentro da moldura; o renderer desenha borda e sombra 1px por fora dela (.frame)
     const bounds = { x: RAIL_WIDTH + FRAME_MARGIN, y: FRAME_MARGIN, width: Math.max(0, width - RAIL_WIDTH - FRAME_MARGIN * 2), height: Math.max(0, height - FRAME_MARGIN * 2) };
-    for (const { view } of this.entries.values()) view.setBounds(bounds);
+    for (const entry of this.entries.values()) entry.view.setBounds(entry.fullscreen ? { x: 0, y: 0, width, height } : bounds);
   }
 
   applyVisibility() {
@@ -212,8 +244,8 @@ class AccountManager extends EventEmitter {
   add(data) {
     const used = new Set(this.accounts.map((a) => a.color));
     const freeColor = ACCOUNT_COLORS.find((c) => !used.has(c)) || ACCOUNT_COLORS[this.accounts.length % ACCOUNT_COLORS.length];
-    const { name, color } = sanitizeAccount(data, { color: freeColor });
-    const account = { id: crypto.randomUUID(), name: name || `Conta ${this.accounts.length + 1}`, color, muted: false, createdAt: new Date().toISOString() };
+    const { name, color, avatar, icon, image } = sanitizeAccount(data, { color: freeColor });
+    const account = { id: crypto.randomUUID(), name: name || `Conta ${this.accounts.length + 1}`, color, avatar, icon, image, muted: false, createdAt: new Date().toISOString() };
     this.accounts.push(account);
     this.mount(account);
     this.layout();
@@ -226,7 +258,9 @@ class AccountManager extends EventEmitter {
   update(id, patch = {}) {
     const account = this.find(id);
     if (!account) return null;
-    if (patch.name != null || patch.color != null) Object.assign(account, sanitizeAccount({ name: patch.name ?? account.name, color: patch.color ?? account.color }, account));
+    if (patch.name != null || patch.color != null || patch.avatar != null || patch.icon != null || patch.image !== undefined) {
+      Object.assign(account, sanitizeAccount({ ...patch, name: patch.name ?? account.name, color: patch.color ?? account.color }, account));
+    }
     if (!account.name) account.name = 'Conta';
     if (patch.muted != null) {
       account.muted = !!patch.muted;
@@ -292,6 +326,24 @@ class AccountManager extends EventEmitter {
   devTools(id = this.activeId) {
     const entry = id ? this.entries.get(id) : null;
     if (entry) entry.view.webContents.toggleDevTools();
+  }
+
+  /** Página de login (QR) vs. app logado; avisa (evento 'logged-out') quando uma conta vinculada cai. */
+  setLoginState(id, loggedIn) {
+    const entry = this.entries.get(id);
+    if (!entry || entry.loggedIn === loggedIn) return;
+    const wasLoggedIn = entry.loggedIn === true;
+    entry.loggedIn = loggedIn;
+    this.emit('change', this.state());
+    if (wasLoggedIn && loggedIn === false) this.emit('logged-out', this.find(id));
+  }
+
+  /** Foto do perfil lida da própria página do WhatsApp (data URL pequena). */
+  setPhoto(id, dataUrl) {
+    const account = this.find(id);
+    if (!account || !validImage(dataUrl) || account.photo === dataUrl) return;
+    account.photo = dataUrl;
+    this.changed();
   }
 
   setRinging(id, text) {

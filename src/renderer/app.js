@@ -25,6 +25,41 @@ const ICONS = {
   phone: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1L6.6 10.8z"/></svg>',
   mute: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.7 21a2 2 0 0 1-3.4 0"/><path d="M18.6 13A17.9 17.9 0 0 1 18 8"/><path d="M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M1 1l22 22"/></svg>',
 };
+const SVG = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+/** Ícones de avatar (chaves validadas no main: ACCOUNT_ICON_KEYS). */
+const ACCOUNT_ICONS = {
+  briefcase: ['Trabalho', SVG('<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>')],
+  home: ['Casa', SVG('<path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>')],
+  headset: ['Suporte', SVG('<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>')],
+  cart: ['Vendas', SVG('<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/>')],
+  star: ['Favorito', SVG('<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>')],
+  heart: ['Pessoal', SVG('<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/>')],
+  phone: ['Telefone', SVG('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>')],
+  building: ['Empresa', SVG('<rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M8 6h2M8 10h2M8 14h2M14 6h2M14 10h2M14 14h2"/>')],
+  bell: ['Avisos', SVG('<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>')],
+  users: ['Equipe', SVG('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>')],
+  globe: ['Global', SVG('<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>')],
+  bolt: ['Urgente', SVG('<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>')],
+  coffee: ['Café', SVG('<path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"/>')],
+  wrench: ['Técnico', SVG('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-7 7a2.1 2.1 0 0 1-3-3l7-7a6 6 0 0 1 7.9-7.9l-3.8 3.8z"/>')],
+  truck: ['Entregas', SVG('<rect x="1" y="3" width="15" height="13"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>')],
+  shield: ['Segurança', SVG('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>')],
+};
+const AVATAR_KINDS = [['initials', 'Iniciais'], ['icon', 'Ícone'], ['image', 'Imagem'], ['photo', 'Foto do WhatsApp']];
+
+/** Preenche um .avatar conforme o tipo escolhido (sem refazer o DOM quando nada mudou). */
+function paintAvatar(node, account) {
+  const kind = account.avatar || 'initials';
+  const src = kind === 'image' ? account.image : kind === 'photo' ? account.photo : null;
+  const sig = kind === 'icon' && ACCOUNT_ICONS[account.icon] ? `icon:${account.icon}` : src ? `${kind}:${src.length}:${src.slice(-24)}` : `initials:${initials(account.name)}`;
+  if (node.dataset.sig === sig) return;
+  node.dataset.sig = sig;
+  node.classList.toggle('has-image', !!src && kind !== 'icon');
+  if (sig.startsWith('icon:')) node.innerHTML = ACCOUNT_ICONS[account.icon][1];
+  else if (src && kind !== 'icon') node.replaceChildren(el('img', { src, alt: '', draggable: false }));
+  else node.textContent = initials(account.name);
+}
+
 const MEDIA_LABELS = {
   granted: ['Permitido', 'ok'],
   denied: ['Negado — libere nos ajustes de privacidade', 'bad'],
@@ -88,66 +123,94 @@ function render() {
   renderOverlay();
 }
 
+/** Cria o botão de uma conta uma única vez; os handlers leem o id do próprio botão (nunca um estado antigo). */
+function createAccountButton() {
+  const button = el('button', { type: 'button', class: 'acc', draggable: true });
+  button.append(
+    el('span', { class: 'avatar' }),
+    el('span', { class: 'badge', hidden: true }),
+    el('span', { class: 'warn', text: '!', hidden: true, title: 'Precisa vincular de novo (QR code)' }),
+    el('span', { class: 'mute', html: ICONS.mute, hidden: true }),
+    el('span', { class: 'call', html: ICONS.phone, hidden: true }),
+    el('span', { class: 'audible', hidden: true }),
+  );
+  button.addEventListener('click', () => {
+    if (modal) closeModal();
+    api.select(button.dataset.id);
+  });
+  button.addEventListener('dblclick', () => openModal({ type: 'account', id: button.dataset.id }));
+  button.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    api.contextMenu(button.dataset.id);
+  });
+  button.addEventListener('dragstart', (event) => {
+    dragId = button.dataset.id;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', dragId);
+    button.classList.add('dragging');
+  });
+  button.addEventListener('dragend', () => {
+    dragId = null;
+    button.classList.remove('dragging');
+  });
+  button.addEventListener('dragover', (event) => {
+    if (!dragId || dragId === button.dataset.id) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  });
+  button.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const target = button.dataset.id;
+    if (!dragId || dragId === target) return;
+    const ids = state.accounts.map((a) => a.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(target);
+    if (from < 0 || to < 0) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, dragId);
+    api.reorder(ids);
+  });
+  return button;
+}
+
+function updateAccountButton(button, account, index) {
+  const active = account.id === state.activeId;
+  button.dataset.id = account.id;
+  button.classList.toggle('active', active);
+  button.classList.toggle('muted', !!account.muted);
+  button.classList.toggle('loading', !account.loaded);
+  button.classList.toggle('ringing', !!account.ringing);
+  button.classList.toggle('audible', !account.ringing && !!account.audible && !active);
+  button.classList.toggle('warn-state', !!account.needsLink);
+  button.style.setProperty('--c', account.color);
+  const parts = [];
+  if (account.ringing) parts.push('Chamada recebida');
+  if (account.needsLink) parts.push('Precisa vincular de novo (QR code)');
+  parts.push(`${account.name}${index < 9 ? ` (${shortcut(index + 1)})` : ''}`);
+  button.title = `${parts.join(' · ')} · duplo clique ou botão direito: nome, cor, silenciar`;
+  paintAvatar(button.querySelector('.avatar'), account);
+  const badge = button.querySelector('.badge');
+  badge.hidden = !account.unread;
+  if (account.unread) badge.textContent = account.unread > 99 ? '99+' : String(account.unread);
+  button.querySelector('.warn').hidden = !account.needsLink || !!account.unread;
+  button.querySelector('.mute').hidden = !account.muted;
+  button.querySelector('.call').hidden = !account.ringing;
+  button.querySelector('.audible').hidden = !!account.ringing || !account.audible || active;
+}
+
+/** Atualiza a barra no lugar (sem recriar botões): um clique ou arrasto em andamento não se perde quando chega mensagem. */
 function renderRail() {
   const list = $('#accounts');
-  list.replaceChildren();
-  state.accounts.forEach((account, index) => {
-    const classes = ['acc'];
-    if (account.id === state.activeId) classes.push('active');
-    if (account.muted) classes.push('muted');
-    if (!account.loaded) classes.push('loading');
-    if (account.ringing) classes.push('ringing');
-    else if (account.audible && account.id !== state.activeId) classes.push('audible');
-    const button = el('button', {
-      type: 'button',
-      class: classes.join(' '),
-      'data-id': account.id,
-      title: `${account.ringing ? 'Chamada recebida · ' : ''}${account.name}${index < 9 ? ` (${shortcut(index + 1)})` : ''} · duplo clique ou botão direito: nome, cor, silenciar`,
-      draggable: true,
-      onclick: () => {
-        if (modal) closeModal();
-        api.select(account.id);
-      },
-      ondblclick: () => openModal({ type: 'account', id: account.id }),
-      oncontextmenu: (event) => {
-        event.preventDefault();
-        api.contextMenu(account.id);
-      },
-    });
-    button.style.setProperty('--c', account.color);
-    button.append(el('span', { class: 'avatar', text: initials(account.name) }));
-    if (account.unread) button.append(el('span', { class: 'badge', text: account.unread > 99 ? '99+' : String(account.unread) }));
-    if (account.muted) button.append(el('span', { class: 'mute', html: ICONS.mute }));
-    if (account.ringing) button.append(el('span', { class: 'call', html: ICONS.phone }));
-    else if (account.audible && account.id !== state.activeId) button.append(el('span', { class: 'audible' }));
-
-    button.addEventListener('dragstart', (event) => {
-      dragId = account.id;
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', account.id);
-      button.classList.add('dragging');
-    });
-    button.addEventListener('dragend', () => {
-      dragId = null;
-      button.classList.remove('dragging');
-    });
-    button.addEventListener('dragover', (event) => {
-      if (!dragId || dragId === account.id) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'move';
-    });
-    button.addEventListener('drop', (event) => {
-      event.preventDefault();
-      if (!dragId || dragId === account.id) return;
-      const ids = state.accounts.map((a) => a.id);
-      const from = ids.indexOf(dragId);
-      const to = ids.indexOf(account.id);
-      if (from < 0 || to < 0) return;
-      ids.splice(from, 1);
-      ids.splice(to, 0, dragId);
-      api.reorder(ids);
-    });
-    list.append(button);
+  const existing = new Map(Array.from(list.children, (node) => [node.dataset.id, node]));
+  const ordered = state.accounts.map((account, index) => {
+    const button = existing.get(account.id) || createAccountButton();
+    existing.delete(account.id);
+    updateAccountButton(button, account, index);
+    return button;
+  });
+  for (const node of existing.values()) node.remove();
+  ordered.forEach((node, i) => {
+    if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
   });
 }
 
@@ -156,7 +219,7 @@ function renderContent() {
   // Não reconstrói o formulário a cada atualização (perderia o que está sendo digitado); as configurações
   // só são reconstruídas quando algo que elas mostram muda (não a cada som ou mensagem), mantendo a rolagem.
   const isSettings = key === 'settings:';
-  const nextSettingsKey = isSettings ? JSON.stringify([state.settings, state.update, state.media, state.spellOptions, state.accounts.map((a) => [a.id, a.name, a.color])]) : '';
+  const nextSettingsKey = isSettings ? JSON.stringify([state.settings, state.update, state.media, state.spellOptions, state.accounts.map((a) => [a.id, a.name, a.color, a.avatar, a.icon, (a.image || '').length, (a.photo || '').length, a.needsLink])]) : '';
   if (key === contentKey && (!isSettings || nextSettingsKey === settingsKey)) return;
   contentKey = key;
   settingsKey = nextSettingsKey;
@@ -200,18 +263,66 @@ function accountForm(id) {
   const existing = id ? state.accounts.find((a) => a.id === id) : null;
   const used = new Set(state.accounts.map((a) => a.color));
   let color = existing ? existing.color : state.colors.find((c) => !used.has(c)) || state.colors[state.accounts.length % state.colors.length] || '#00C9B1';
+  let avatar = (existing && existing.avatar) || 'initials';
+  let icon = (existing && existing.icon) || 'briefcase';
+  let image = (existing && existing.image) || null;
+  const photo = existing ? existing.photo : null;
+  if (avatar === 'photo' && !photo) avatar = 'initials';
+  if (avatar === 'image' && !image) avatar = 'initials';
+
   const nameInput = el('input', { class: 'input', type: 'text', maxlength: 32, placeholder: 'Ex.: Suporte, Vendas, Pessoal', value: existing ? existing.name : '', spellcheck: 'false' });
   const swatches = el('div', { class: 'swatches' });
-  const drawSwatches = () => {
+  const preview = el('span', { class: 'avatar preview' });
+  const kinds = el('div', { class: 'chips' });
+  const detail = el('div', { class: 'avatar-detail' });
+
+  const current = () => ({ name: nameInput.value || (existing ? existing.name : 'Conta'), color, avatar, icon, image, photo });
+  const refresh = () => {
+    preview.style.setProperty('--c', color);
+    paintAvatar(preview, current());
     swatches.replaceChildren(
       ...state.colors.map((c) => {
-        const swatch = el('button', { type: 'button', class: `swatch${c === color ? ' selected' : ''}`, title: c, 'aria-label': `Cor ${c}`, onclick: () => { color = c; drawSwatches(); } });
+        const swatch = el('button', { type: 'button', class: `swatch${c === color ? ' selected' : ''}`, title: c, 'aria-label': `Cor ${c}`, onclick: () => { color = c; refresh(); } });
         swatch.style.setProperty('--c', c);
         return swatch;
       }),
     );
+    kinds.replaceChildren(
+      ...AVATAR_KINDS.filter(([kind]) => kind !== 'photo' || photo).map(([kind, label]) =>
+        el('button', { type: 'button', class: `chip${avatar === kind ? ' on' : ''}`, text: label, onclick: () => { avatar = kind; if (kind === 'image' && !image) pickImage(); refresh(); } }),
+      ),
+    );
+    detail.replaceChildren();
+    if (avatar === 'icon') {
+      detail.append(
+        el('div', { class: 'icon-grid' }, Object.entries(ACCOUNT_ICONS).map(([key, [label, svg]]) => {
+          const button = el('button', { type: 'button', class: `icon-btn${icon === key ? ' selected' : ''}`, title: label, 'aria-label': label, html: svg, onclick: () => { icon = key; refresh(); } });
+          button.style.setProperty('--c', color);
+          return button;
+        })),
+      );
+    } else if (avatar === 'image') {
+      detail.append(
+        el('div', { class: 'actions start' }, [
+          el('button', { type: 'button', class: 'btn ghost small', text: image ? 'Trocar imagem…' : 'Escolher imagem…', onclick: pickImage }),
+          image ? el('button', { type: 'button', class: 'btn ghost small', text: 'Remover imagem', onclick: () => { image = null; avatar = 'initials'; refresh(); } }) : null,
+        ]),
+        el('p', { class: 'hint small', text: 'PNG ou JPG; o centro da imagem vira um círculo de 128 px.' }),
+      );
+    } else if (avatar === 'photo') {
+      detail.append(el('p', { class: 'hint small', text: 'A foto do perfil é lida da própria conta e atualizada de tempos em tempos.' }));
+    }
   };
-  drawSwatches();
+  const pickImage = async () => {
+    const data = await api.pickImage();
+    if (data) {
+      image = data;
+      avatar = 'image';
+    } else if (!image) avatar = 'initials';
+    refresh();
+  };
+  nameInput.addEventListener('input', () => paintAvatar(preview, current()));
+  refresh();
 
   return el('form', {
     class: 'panel',
@@ -219,15 +330,17 @@ function accountForm(id) {
       event.preventDefault();
       const name = nameInput.value.trim();
       if (!name) return nameInput.focus();
-      if (existing) await api.update(existing.id, { name, color });
-      else await api.add({ name, color });
+      const data = { name, color, avatar, icon, image };
+      if (existing) await api.update(existing.id, data);
+      else await api.add(data);
       dismiss();
     },
   }, [
     el('h2', { text: existing ? 'Editar conta' : 'Nova conta' }),
-    el('p', { class: 'hint', text: existing ? 'O nome e a cor aparecem só na barra lateral.' : 'Cada conta é um aparelho vinculado separado: depois de criar, escaneie o QR code com o celular desse número.' }),
-    el('label', { class: 'field' }, [el('span', { text: 'Nome' }), nameInput]),
+    el('p', { class: 'hint', text: existing ? 'Nome, cor e avatar aparecem só na barra lateral.' : 'Cada conta é um aparelho vinculado separado: depois de criar, escaneie o QR code com o celular desse número.' }),
+    el('div', { class: 'avatar-row' }, [preview, el('label', { class: 'field grow' }, [el('span', { text: 'Nome' }), nameInput])]),
     el('div', { class: 'field' }, [el('span', { text: 'Cor' }), swatches]),
+    el('div', { class: 'field' }, [el('span', { text: 'Avatar' }), kinds, detail]),
     el('div', { class: 'actions' }, [
       el('button', { type: 'button', class: 'btn ghost', text: 'Cancelar', onclick: dismiss }),
       el('button', { type: 'submit', class: 'btn primary', text: existing ? 'Salvar' : 'Adicionar' }),
@@ -251,10 +364,11 @@ function settingsPanel() {
 
   if (state.accounts.length) {
     items.push(el('h3', { text: 'Contas' }));
-    items.push(el('p', { class: 'hint small', text: 'Nome e cor podem ser mudados a qualquer momento (também com duplo clique ou botão direito na barra lateral).' }));
+    items.push(el('p', { class: 'hint small', text: 'Nome, cor e avatar (iniciais, ícone, imagem ou a foto do WhatsApp) podem ser mudados a qualquer momento — também com duplo clique ou botão direito na barra lateral.' }));
     for (const account of state.accounts) {
-      const avatar = el('span', { class: 'avatar mini', text: initials(account.name) });
+      const avatar = el('span', { class: 'avatar mini' });
       avatar.style.setProperty('--c', account.color);
+      paintAvatar(avatar, account);
       items.push(
         el('div', { class: 'account-row' }, [
           avatar,
@@ -291,6 +405,22 @@ function settingsPanel() {
       hint: 'Ao tocar, a conta vem para a frente; o avatar pisca com um telefone de qualquer jeito.',
       checked: settings.switchOnCall !== false,
       onchange: (value) => api.setSetting('switchOnCall', value),
+    }),
+  );
+  items.push(
+    toggle({
+      label: 'Manter a janela sempre no topo',
+      hint: 'Útil para acompanhar conversas enquanto usa outros programas (também no menu Visualizar).',
+      checked: !!settings.alwaysOnTop,
+      onchange: (value) => api.setSetting('alwaysOnTop', value),
+    }),
+  );
+  items.push(
+    toggle({
+      label: `Atalho global ${mac ? '⌃⇧W' : 'Ctrl+Shift+W'} para mostrar ou esconder`,
+      hint: 'Funciona de qualquer programa, mesmo com o Palette escondido.',
+      checked: !!settings.globalShortcut,
+      onchange: (value) => api.setSetting('globalShortcut', value),
     }),
   );
   if (!mac) {

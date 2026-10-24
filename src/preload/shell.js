@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('palette', {
   contextMenu: (id) => ipcRenderer.send('shell:context-menu', id),
   setModal: (open) => ipcRenderer.send('shell:modal', !!open),
   setSetting: (key, value) => ipcRenderer.invoke('shell:set-setting', key, value),
+  pickImage: () => ipcRenderer.invoke('shell:pick-image'),
   openPrivacy: () => ipcRenderer.send('shell:open-privacy'),
   checkUpdate: () => ipcRenderer.invoke('shell:check-update'),
   installUpdate: () => ipcRenderer.send('shell:install-update'),

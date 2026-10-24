@@ -16,4 +16,9 @@ module.exports = {
   DEFAULT_SPELL_LANGUAGES: ['pt-BR', 'en-US'],
   SPELL_LANGUAGE_OPTIONS: ['pt-BR', 'pt-PT', 'en-US', 'en-GB', 'es', 'fr', 'de', 'it'],
   MAX_NAME_LENGTH: 32,
+  /** Avatar da conta: iniciais (padrão), ícone do conjunto, imagem escolhida ou foto do perfil do WhatsApp. */
+  AVATAR_KINDS: ['initials', 'icon', 'image', 'photo'],
+  ACCOUNT_ICON_KEYS: ['briefcase', 'home', 'headset', 'cart', 'star', 'heart', 'phone', 'building', 'bell', 'users', 'globe', 'bolt', 'coffee', 'wrench', 'truck', 'shield'],
+  /** Tamanho máximo (chars) de uma imagem/foto em data URL guardada na conta (128px PNG ≈ 30 KB). */
+  MAX_IMAGE_DATA_URL: 200000,
 };
