@@ -972,6 +972,35 @@ function main() {
       }
     }
 
+    // PALETTE_TEST_FILE_DIALOG=1: diagnóstico do seletor de arquivos (Linux) — abre o diálogo pelo processo
+    // principal e por um <input type=file> na página da conta ativa (como o WhatsApp faz ao anexar), com
+    // tempo limite, e loga ambiente e resultados; quem chama tira screenshots da tela enquanto isso.
+    if (process.env.PALETTE_TEST_FILE_DIALOG) {
+      const entry = manager.entries.get(manager.activeId);
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const test = async () => {
+        const wc = entry.view.webContents;
+        await wait(3000);
+        console.log('[dialog-test] ambiente:', JSON.stringify({ platform: process.platform, electron: process.versions.electron, fileDialogMode, XDG_CURRENT_DESKTOP: process.env.XDG_CURRENT_DESKTOP, XDG_SESSION_TYPE: process.env.XDG_SESSION_TYPE, ozone: process.env.ELECTRON_OZONE_PLATFORM_HINT, args: process.argv.slice(1) }));
+        const main = await Promise.race([
+          dialog.showOpenDialog(win, { title: 'Teste (main)', properties: ['openFile'] }).then((r) => ({ shown: true, canceled: r.canceled })),
+          wait(8000).then(() => ({ shown: 'sem resposta em 8 s' })),
+        ]);
+        console.log('[dialog-test] main dialog:', JSON.stringify(main));
+        const page = await wc
+          .executeJavaScript(`new Promise((resolve) => { const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*,video/*'; input.style.position = 'fixed'; document.body.appendChild(input); let done = false; input.addEventListener('change', () => { done = true; resolve('change: ' + input.files.length + ' arquivo(s)'); }); input.addEventListener('cancel', () => { done = true; resolve('cancel'); }); input.click(); setTimeout(() => { if (!done) resolve('sem evento em 8 s'); }, 8000); })`, true)
+          .catch((e) => 'erro: ' + e.message);
+        console.log('[dialog-test] página <input type=file>:', page);
+        await wait(1000);
+        console.log('[dialog-test] fim');
+        app.exit(0);
+      };
+      if (entry) {
+        if (entry.loaded) test();
+        else entry.view.webContents.once('did-finish-load', test);
+      }
+    }
+
     if (SMOKE_DIR) {
       try {
         await runSmoke(SMOKE_DIR);
