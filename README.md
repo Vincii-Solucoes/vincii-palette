@@ -57,7 +57,7 @@ Cada conta é o WhatsApp Web oficial numa sessão isolada e sem acesso ao sistem
 
 ## Seletor de arquivos no Linux
 
-Anexar e salvar usam o seletor do sistema. Por padrão o Palette usa o diálogo nativo (GTK/KDE), que funciona na maioria dos ambientes; nele, selecione o arquivo e clique em **Abrir** (Enter e duplo clique ainda não funcionam no Chromium). Em Configurações › Seletor de arquivos dá para trocar para o portal do sistema ou o automático, e o botão **Testar seletor agora** mostra se o diálogo abre. A troca vale na próxima abertura do app.
+No Linux, anexar (fotos e vídeos, áudio, documentos) e salvar usam por padrão o **seletor do Palette**: um diálogo do próprio app, com atalhos para Início, Imagens, Vídeos, Música, Downloads, Documentos e Área de trabalho, que abre já na pasta certa para o tipo pedido, aceita duplo clique e entrega o arquivo ao WhatsApp por dentro — sem depender do GTK, do KDE nem do portal do sistema. Em Configurações › Seletor de arquivos dá para voltar ao diálogo nativo (GTK, portal ou automático), e o botão **Testar seletor agora** abre o seletor em uso. A troca vale na próxima abertura do app. No macOS e no Windows o seletor é sempre o do sistema.
 
 ## Permissões de chamada
 

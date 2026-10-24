@@ -34,11 +34,14 @@ function sanitizeAccount(data = {}, fallback = {}) {
 }
 
 class AccountManager extends EventEmitter {
-  constructor({ win, store, isDev }) {
+  constructor({ win, store, isDev, pickFiles = null, pickSave = null, interceptChooser = false }) {
     super();
     this.win = win;
     this.store = store;
     this.isDev = isDev;
+    this.pickFiles = pickFiles;
+    this.pickSave = pickSave;
+    this.interceptChooser = interceptChooser && typeof pickFiles === 'function';
     this.entries = new Map(); // id → { view, unread, loaded }
     this.modalOpen = false;
     this.accounts = Array.isArray(store.get('accounts')) ? store.get('accounts') : [];
@@ -101,7 +104,7 @@ class AccountManager extends EventEmitter {
 
   mount(account, { delay = 0 } = {}) {
     const partition = partitionOf(account.id);
-    configureSession(session.fromPartition(partition), { spellLanguages: this.settings.spellLanguages, getSettings: () => this.settings });
+    configureSession(session.fromPartition(partition), { spellLanguages: this.settings.spellLanguages, getSettings: () => this.settings, pickSave: this.pickSave });
     const view = new WebContentsView({
       webPreferences: {
         partition,
@@ -179,6 +182,7 @@ class AccountManager extends EventEmitter {
       this.emit('change', this.state());
     });
     wc.on('context-menu', (_event, params) => this.showPageContextMenu(wc, params));
+    if (this.interceptChooser) this.installFileChooser(wc, account);
 
     this.win.contentView.addChildView(view);
     if (delay) setTimeout(() => !wc.isDestroyed() && wc.loadURL(WA_URL), delay);
@@ -326,6 +330,53 @@ class AccountManager extends EventEmitter {
   devTools(id = this.activeId) {
     const entry = id ? this.entries.get(id) : null;
     if (entry) entry.view.webContents.toggleDevTools();
+  }
+
+  /**
+   * Seletor de arquivos do Palette: intercepta o <input type=file> da página (protocolo do Chromium,
+   * Page.setInterceptFileChooserDialog), abre o seletor desenhado pela barra lateral e entrega os arquivos
+   * escolhidos ao WhatsApp com DOM.setFileInputFiles — nada de diálogo nativo (GTK/portal) no caminho.
+   */
+  installFileChooser(wc, account) {
+    wc.debugger.on('message', (_event, method, params) => {
+      if (method === 'Page.fileChooserOpened') this.onFileChooser(wc, params);
+    });
+    wc.debugger.on('detach', (_event, reason) => {
+      if (!wc.isDestroyed() && reason !== 'target closed') console.warn(`[seletor] ${account.name}: protocolo desanexado (${reason}); volta a anexar no próximo carregamento`);
+    });
+    const enable = async () => {
+      if (wc.isDestroyed()) return;
+      try {
+        if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+        await wc.debugger.sendCommand('Page.enable');
+        await wc.debugger.sendCommand('DOM.enable');
+        await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
+      } catch (e) {
+        console.warn(`[seletor] ${account.name}: interceptação indisponível:`, e.message);
+      }
+    };
+    wc.on('did-finish-load', enable);
+  }
+
+  async onFileChooser(wc, params) {
+    const { mode, backendNodeId } = params || {};
+    let accept = '';
+    try {
+      const { node } = await wc.debugger.sendCommand('DOM.describeNode', { backendNodeId });
+      const attrs = (node && node.attributes) || [];
+      const i = attrs.indexOf('accept');
+      if (i >= 0) accept = attrs[i + 1] || '';
+    } catch {}
+    this.win.webContents.focus();
+    const files = await this.pickFiles({ accept, multiple: mode === 'selectMultiple' });
+    if (wc.isDestroyed()) return;
+    this.focusActive();
+    if (!files || !files.length) return; // cancelar = o WhatsApp fica como estava
+    try {
+      await wc.debugger.sendCommand('DOM.setFileInputFiles', { files, backendNodeId });
+    } catch (e) {
+      console.warn('[seletor] não foi possível entregar os arquivos:', e.message);
+    }
   }
 
   /** Página de login (QR) vs. app logado; avisa (evento 'logged-out') quando uma conta vinculada cai. */

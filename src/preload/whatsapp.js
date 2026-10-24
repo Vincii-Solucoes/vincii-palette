@@ -13,9 +13,11 @@ const { ipcRenderer, webFrame } = require('electron');
 const CALL_RE = /(chamada|llamada|videollamada)[^.]{0,40}(recebida|entrante)|incoming[^.]{0,30}call|is calling|est[áa] (te )?(ligando|chamando)/i;
 const ANSWER_RE = /aceitar|atender|recusar|accept|answer|decline|reject|aceptar|contestar|rechazar/i;
 
+const STRIP_FSA = process.platform === 'linux';
 const PATCH = `(() => {
   if (window.__palettePatched) return;
   window.__palettePatched = true;
+  if (${STRIP_FSA}) for (const k of ['showOpenFilePicker', 'showSaveFilePicker', 'showDirectoryPicker']) { try { delete window[k]; if (k in window) Object.defineProperty(window, k, { value: undefined, configurable: true, writable: true }); } catch {} }
   const Native = window.Notification;
   if (typeof Native !== 'function') return;
   const CALL_RE = ${CALL_RE.toString()};

@@ -69,7 +69,7 @@ function uniquePath(dir, name) {
 
 const configured = new WeakSet();
 
-function configureSession(ses, { spellLanguages, getSettings = () => ({}) } = {}) {
+function configureSession(ses, { spellLanguages, getSettings = () => ({}), pickSave = null } = {}) {
   if (configured.has(ses)) {
     applySpellLanguages(ses, spellLanguages);
     return;
@@ -116,6 +116,26 @@ function configureSession(ses, { spellLanguages, getSettings = () => ({}) } = {}
     const name = (item.getFilename() || 'arquivo').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/^\.+$/, '').trim() || 'arquivo';
     const target = uniquePath(app.getPath('downloads'), name);
     const settings = getSettings() || {};
+    if (settings.askWhereToSave !== false && typeof pickSave === 'function') {
+      // Seletor do Palette: baixa numa pasta temporária e, ao terminar, pergunta onde guardar
+      const tmpDir = path.join(app.getPath('temp'), 'palette-downloads');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      const tmpPath = uniquePath(tmpDir, name);
+      item.setSavePath(tmpPath);
+      item.once('done', async (_e, state) => {
+        if (state !== 'completed') return;
+        const dest = await pickSave({ suggestedName: name });
+        if (!dest) return fs.rm(tmpPath, { force: true }, () => {});
+        try {
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.copyFileSync(tmpPath, dest);
+          fs.rmSync(tmpPath, { force: true });
+        } catch (e) {
+          console.error('[download] não foi possível salvar em', dest, e.message);
+        }
+      });
+      return;
+    }
     if (settings.askWhereToSave !== false) item.setSaveDialogOptions({ title: 'Salvar arquivo', defaultPath: target });
     else item.setSavePath(target);
     item.once('done', (_e, state) => {

@@ -23,6 +23,8 @@ const el = (tag, attrs = {}, children = []) => {
 
 const ICONS = {
   phone: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1L6.6 10.8z"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>',
   mute: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.7 21a2 2 0 0 1-3.4 0"/><path d="M18.6 13A17.9 17.9 0 0 1 18 8"/><path d="M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M1 1l22 22"/></svg>',
 };
 const SVG = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
@@ -84,6 +86,7 @@ let settingsKey = '';
 let dragId = null;
 let lastOverlay = -1;
 let fileDialogTest = null; // resultado do último "Testar seletor" (Linux)
+let picker = null; // seletor de arquivos do Palette: { spec, dir, parent, entries, selected, error, els }
 
 const initials = (name) => {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -105,6 +108,10 @@ const logModal = (action, next) => {
 
 function openModal(next) {
   logModal('open', next);
+  if (modal && modal.type === 'picker' && picker && next.type !== 'picker') {
+    picker = null;
+    api.pickerResult(null);
+  }
   modal = next;
   api.setModal(true);
   render();
@@ -113,6 +120,10 @@ function openModal(next) {
 function closeModal() {
   if (!modal) return;
   logModal('close', modal);
+  if (modal.type === 'picker' && picker) {
+    picker = null;
+    api.pickerResult(null);
+  }
   modal = null;
   api.setModal(false);
   render();
@@ -252,7 +263,107 @@ function renderContent() {
   } else if (modal && modal.type === 'settings') {
     main.append(settingsPanel());
     main.scrollTop = scrollTop;
+  } else if (modal && modal.type === 'picker' && picker) {
+    main.append(pickerPanel());
+    renderPickerList();
   } else main.append(welcome());
+}
+
+// ---------- seletor de arquivos do Palette ----------
+
+const joinPath = (dir, name) => (state.platform === 'win32' ? (dir.endsWith('\\') ? dir + name : `${dir}\\${name}`) : dir.endsWith('/') ? dir + name : `${dir}/${name}`);
+const formatSize = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
+
+function openPicker(spec) {
+  picker = { spec, dir: spec.start, parent: null, entries: [], selected: new Set(), error: '', els: null };
+  openModal({ type: 'picker' });
+  loadDir(spec.start);
+}
+
+async function loadDir(dir) {
+  const current = picker;
+  if (!current) return;
+  const result = await api.pickerList(dir);
+  if (!result || picker !== current) return;
+  current.dir = result.dir;
+  current.parent = result.parent;
+  current.entries = result.entries || [];
+  current.error = result.error || '';
+  current.selected.clear();
+  renderPickerList();
+}
+
+function finishPicker(result) {
+  if (!picker) return;
+  picker = null;
+  api.pickerResult(result);
+  closeModal();
+}
+
+function submitPicker() {
+  const p = picker;
+  if (!p) return;
+  if (p.spec.kind === 'save') {
+    const name = (p.els.nameInput.value || '').trim();
+    if (!name) return p.els.nameInput.focus();
+    finishPicker(joinPath(p.dir, name));
+  } else {
+    const paths = [...p.selected].map((n) => joinPath(p.dir, n));
+    if (paths.length) finishPicker(paths);
+  }
+}
+
+function pickerPanel() {
+  const p = picker;
+  const spec = p.spec;
+  const pathBar = el('div', { class: 'picker-path' });
+  const list = el('div', { class: 'picker-list' });
+  const status = el('p', { class: 'hint small picker-status' });
+  const nameInput = spec.kind === 'save' ? el('input', { class: 'input', type: 'text', value: spec.suggestedName || '', spellcheck: 'false' }) : null;
+  const okBtn = el('button', { type: 'submit', class: 'btn primary', text: spec.kind === 'save' ? 'Salvar aqui' : spec.multiple ? 'Anexar selecionados' : 'Escolher' });
+  p.els = { pathBar, list, status, nameInput, okBtn };
+  return el('form', { class: 'panel picker', onsubmit: (event) => { event.preventDefault(); submitPicker(); } }, [
+    el('h2', { text: spec.title }),
+    el('div', { class: 'chips' }, (spec.places || []).map((place) => el('button', { type: 'button', class: 'chip', text: place.label, onclick: () => loadDir(place.path) }))),
+    el('div', { class: 'picker-bar' }, [el('button', { type: 'button', class: 'btn ghost small', text: '↑ Pasta acima', onclick: () => p.parent && loadDir(p.parent) }), pathBar]),
+    list,
+    status,
+    nameInput ? el('label', { class: 'field' }, [el('span', { text: 'Nome do arquivo' }), nameInput]) : null,
+    el('p', { class: 'hint small', text: spec.kind === 'save' ? 'Escolha a pasta, confira o nome e clique em Salvar aqui.' : spec.multiple ? 'Clique para marcar vários arquivos; duplo clique abre pastas ou escolhe um arquivo.' : 'Duplo clique escolhe o arquivo; clique simples marca e Escolher confirma.' }),
+    el('div', { class: 'actions' }, [el('button', { type: 'button', class: 'btn ghost', text: 'Cancelar', onclick: () => finishPicker(null) }), okBtn]),
+  ]);
+}
+
+function renderPickerList() {
+  const p = picker;
+  if (!p || !p.els) return;
+  const { list, pathBar, status, okBtn } = p.els;
+  pathBar.textContent = p.dir || '';
+  list.replaceChildren(
+    ...p.entries.map((entry) => {
+      const row = el('div', { class: `picker-row${p.selected.has(entry.name) ? ' selected' : ''}`, html: entry.dir ? ICONS.folder : ICONS.file, title: entry.name });
+      row.append(el('span', { class: 'picker-name', text: entry.name }), el('span', { class: 'picker-size', text: entry.dir ? '' : formatSize(entry.size) }));
+      row.addEventListener('click', () => {
+        if (entry.dir) return;
+        if (p.spec.multiple) {
+          if (p.selected.has(entry.name)) p.selected.delete(entry.name);
+          else p.selected.add(entry.name);
+        } else {
+          p.selected.clear();
+          p.selected.add(entry.name);
+        }
+        if (p.els.nameInput) p.els.nameInput.value = entry.name;
+        renderPickerList();
+      });
+      row.addEventListener('dblclick', () => {
+        if (entry.dir) loadDir(joinPath(p.dir, entry.name));
+        else if (p.spec.kind === 'open') finishPicker([joinPath(p.dir, entry.name)]);
+      });
+      return row;
+    }),
+  );
+  status.textContent = p.error || (p.entries.length === 1 ? '1 item' : p.entries.length ? `${p.entries.length} itens` : p.spec.exts ? 'Nenhum arquivo deste tipo nesta pasta.' : 'Pasta vazia.');
+  okBtn.disabled = p.spec.kind === 'open' && !p.selected.size;
 }
 
 function welcome() {
@@ -462,11 +573,11 @@ function settingsPanel() {
   );
 
   if (state.platform === 'linux') {
-    const mode = settings.fileDialog || 'gtk';
+    const mode = settings.fileDialog || 'palette';
     items.push(el('h3', { text: 'Seletor de arquivos (Linux)' }));
-    items.push(el('p', { class: 'hint small', text: `Anexar e salvar usam o seletor do sistema. "Nativo (GTK)" funciona na maioria dos ambientes — nele, selecione o arquivo e clique em Abrir, pois Enter e duplo clique ainda não funcionam no Chromium. "Portal" usa o serviço xdg-desktop-portal do ambiente. A troca vale na próxima abertura do app.${state.linux ? ` Ambiente: ${state.linux.desktop || '?'} em ${state.linux.session || '?'}; em uso agora: ${state.linux.fileDialogActive}.` : ''}` }));
+    items.push(el('p', { class: 'hint small', text: `"Seletor do Palette" é o diálogo do próprio app (abre em Imagens, Vídeos, Música ou Downloads conforme o pedido e aceita duplo clique) e não depende do sistema. Os outros usam o seletor nativo: GTK (nele, selecione e clique em Abrir — Enter e duplo clique ainda não funcionam no Chromium) ou o portal xdg-desktop-portal. A troca vale na próxima abertura do app.${state.linux ? ` Ambiente: ${state.linux.desktop || '?'} em ${state.linux.session || '?'}; em uso agora: ${{ palette: 'Seletor do Palette', gtk: 'GTK', portal: 'portal', auto: 'automático' }[state.linux.fileDialogActive] || state.linux.fileDialogActive}.` : ''}` }));
     items.push(
-      el('div', { class: 'chips' }, [['gtk', 'Nativo (GTK)'], ['portal', 'Portal do sistema'], ['auto', 'Automático']].map(([value, label]) =>
+      el('div', { class: 'chips' }, [['palette', 'Seletor do Palette'], ['gtk', 'Nativo (GTK)'], ['portal', 'Portal do sistema'], ['auto', 'Automático']].map(([value, label]) =>
         el('button', { type: 'button', class: `chip${mode === value ? ' on' : ''}`, text: label, onclick: () => api.setSetting('fileDialog', value) }),
       )),
     );
@@ -600,6 +711,7 @@ api.onCommand((command, arg) => {
   if (command === 'new-account') openModal({ type: 'account' });
   else if (command === 'edit-account') openModal({ type: 'account', id: arg });
   else if (command === 'settings') (modal && modal.type === 'settings' ? closeModal() : openModal({ type: 'settings' }));
+  else if (command === 'picker' && arg) openPicker(arg);
 });
 api.onState((next) => {
   state = next;

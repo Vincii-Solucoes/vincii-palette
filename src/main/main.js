@@ -12,6 +12,7 @@ const { Store } = require('./store');
 const { AccountManager, sanitizeAccount } = require('./accounts');
 const { buildAppMenu } = require('./menu');
 const { createTray } = require('./tray');
+const { createPicker } = require('./picker');
 const { APP_NAME, APP_ID, BG, ACCOUNT_COLORS, DEFAULT_SPELL_LANGUAGES, SPELL_LANGUAGE_OPTIONS } = require('./constants');
 
 const isMac = process.platform === 'darwin';
@@ -36,7 +37,7 @@ const DEFAULTS = {
   accounts: [],
   activeId: null,
   bounds: null,
-  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true, askWhereToSave: true, alwaysOnTop: false, globalShortcut: false, fileDialog: 'gtk' },
+  settings: { startAtLogin: false, closeToTray: true, spellLanguages: DEFAULT_SPELL_LANGUAGES, theme: 'dark', switchOnCall: true, askWhereToSave: true, alwaysOnTop: false, globalShortcut: false, fileDialog: 'palette' },
 };
 
 if (process.env.PALETTE_USER_DATA) app.setPath('userData', path.resolve(process.env.PALETTE_USER_DATA));
@@ -50,14 +51,21 @@ const store = new Store(path.join(app.getPath('userData'), 'palette.json'), DEFA
 // >= --xdg-portal-required-version (padrão 3); quando o serviço do portal não responde, o diálogo nunca
 // aparece. "gtk" (padrão) exige uma versão impossível e força o diálogo nativo GTK/KDE; "portal" aceita
 // qualquer versão; "auto" deixa o padrão do Electron. Vale a partir da próxima abertura do app.
-const FILE_DIALOG_MODES = ['gtk', 'portal', 'auto'];
-const fileDialogMode = FILE_DIALOG_MODES.includes((store.get('settings') || {}).fileDialog) ? store.get('settings').fileDialog : 'gtk';
+const FILE_DIALOG_MODES = ['palette', 'gtk', 'portal', 'auto'];
+// 1.2.0 trouxe o seletor do Palette: no Linux, quem vinha das 1.1.x (GTK/portal gravados nas configurações) passa
+// para ele uma vez; a escolha feita depois disso em Configurações continua valendo.
+if (isLinux && !(store.get('settings') || {}).pickerIntroduced) store.set('settings', { ...store.get('settings'), fileDialog: 'palette', pickerIntroduced: true });
+const fileDialogMode = FILE_DIALOG_MODES.includes((store.get('settings') || {}).fileDialog) ? store.get('settings').fileDialog : 'palette';
+// "palette" (padrão no Linux): o Palette desenha o próprio seletor e entrega o arquivo ao WhatsApp pelo protocolo do
+// Chromium (src/main/picker.js), sem depender de GTK/portal; no macOS/Windows o seletor nativo é sempre usado.
+const useOwnPicker = isLinux && fileDialogMode === 'palette';
 if (isLinux && fileDialogMode === 'gtk') app.commandLine.appendSwitch('xdg-portal-required-version', '99');
 if (isLinux && fileDialogMode === 'portal') app.commandLine.appendSwitch('xdg-portal-required-version', '1');
 
 let win = null;
 let manager = null;
 let tray = null;
+let picker = null;
 let quitting = false;
 let pendingProtocolUrl = null;
 let lastUnreadTotal = 0;
@@ -145,7 +153,14 @@ function createWindow() {
   win.loadFile(RENDERER_HTML);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
-  manager = new AccountManager({ win, store, isDev });
+  manager = new AccountManager({
+    win,
+    store,
+    isDev,
+    pickFiles: (spec) => picker.open(spec),
+    pickSave: useOwnPicker ? (spec) => picker.save(spec) : null,
+    interceptChooser: useOwnPicker || !!SMOKE_DIR, // no smoke, testa a entrega do arquivo mesmo no macOS
+  });
   manager.on('change', onAccountsChanged);
   // Conta vinculada caiu para a página de QR code: avisa para o usuário vincular de novo
   manager.on('logged-out', (account) => {
@@ -352,7 +367,7 @@ function applySetting(key, value) {
       applyGlobalShortcut(settings.globalShortcut);
       break;
     case 'fileDialog':
-      settings.fileDialog = FILE_DIALOG_MODES.includes(value) ? value : 'gtk';
+      settings.fileDialog = FILE_DIALOG_MODES.includes(value) ? value : 'palette';
       if (settings.fileDialog !== fileDialogMode && win && !win.isDestroyed()) {
         dialog.showMessageBox(win, { type: 'info', title: 'Seletor de arquivos', message: 'Seletor de arquivos alterado', detail: 'A mudança vale a partir da próxima vez que o Palette abrir. Feche e abra o app para aplicar.' });
       }
@@ -455,15 +470,23 @@ function registerIpc() {
     if (fromShell(event)) handler(event, ...args);
   });
   const lastCallSignal = new Map(); // por conta: evita rajadas de wa:incoming-call
+  picker = createPicker({ sendCommand, fromShell });
   shellHandle('shell:ready', () => fullState());
   shellOn('shell:select', (_event, id) => manager.select(String(id)));
   shellHandle('shell:add', (_event, data) => manager.add(sanitizeAccount(data || {})).id);
   shellHandle('shell:update', (_event, id, data) => !!manager.update(String(id), sanitizeAccount(data || {}, manager.find(String(id)) || {})));
   // Imagem para o avatar: diálogo do sistema → quadrado central redimensionado para 128px (PNG em data URL)
   shellHandle('shell:pick-image', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, { title: 'Escolher imagem', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg'] }] });
-    if (canceled || !filePaths[0]) return null;
-    const image = nativeImage.createFromPath(filePaths[0]);
+    let file = null;
+    if (useOwnPicker) {
+      const paths = await picker.open({ accept: 'image/png,image/jpeg', title: 'Escolher imagem' });
+      file = paths && paths[0];
+    } else {
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, { title: 'Escolher imagem', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg'] }] });
+      file = !canceled && filePaths[0];
+    }
+    if (!file) return null;
+    const image = nativeImage.createFromPath(file);
     if (image.isEmpty()) return null;
     const { width, height } = image.getSize();
     const side = Math.min(width, height);
@@ -490,6 +513,10 @@ function registerIpc() {
   // Diagnóstico do seletor de arquivos: abre o diálogo pelo processo principal (mesmo mecanismo do WhatsApp) e mede
   shellHandle('shell:test-file-dialog', async () => {
     const started = Date.now();
+    if (useOwnPicker) {
+      const paths = await picker.open({ accept: '', title: 'Teste do seletor do Palette' });
+      return { ok: true, canceled: !paths, ms: Date.now() - started, mode: 'palette' };
+    }
     const result = await Promise.race([
       dialog.showOpenDialog(win, { title: 'Teste do seletor de arquivos', buttonLabel: 'Fechar teste', properties: ['openFile'] }).then((r) => ({ ok: true, canceled: r.canceled })),
       new Promise((resolve) => setTimeout(() => resolve({ ok: false, timeout: true }), 15000)),
@@ -676,6 +703,10 @@ async function runSmoke(dir) {
   await delay(300);
   info.manager.afterRemove = { accounts: manager.accounts.length, entries: manager.entries.size, children: win.contentView.children.length, active: (manager.find(manager.activeId) || {}).name };
   await step('gerenciador testado');
+
+  // 4. Seletor do Palette: <input type=file> da página abre o diálogo da barra; a escolha chega ao input via protocolo
+  info.picker = await smokePicker({ wc, shellJs, probe, shot, delay }).catch((e) => ({ erro: e.message }));
+  await step('seletor testado');
   info.url = wc.getURL();
   info.page = await probe(`(() => ({
     title: document.title,
@@ -696,6 +727,76 @@ async function runSmoke(dir) {
   await shot('shell.png', win.webContents);
   fs.writeFileSync(path.join(dir, 'smoke.json'), JSON.stringify(info, null, 2));
   console.log('[smoke]', JSON.stringify(info, null, 2));
+}
+
+async function smokePicker({ wc, shellJs, probe, shot, delay }) {
+  const result = {};
+  const waitFor = async (code, timeout = 6000) => {
+    const until = Date.now() + timeout;
+    while (Date.now() < until) {
+      if (await shellJs(code)) return true;
+      await delay(100);
+    }
+    return false;
+  };
+  const file = path.join(__dirname, '..', '..', 'build', 'icon.png');
+  result.attached = wc.debugger.isAttached();
+  result.fsaRemovable = await probe(`(() => { const had = 'showOpenFilePicker' in window; try { delete window.showOpenFilePicker; } catch (e) { return 'erro: ' + e.message; } return had && !('showOpenFilePicker' in window); })()`);
+  if (!fs.existsSync(file) || !result.attached) return result;
+  // Abrir: o clique no input (com gesto de usuário) deve abrir o diálogo da barra, e não o do sistema
+  await probe(`(() => { const i = document.createElement('input'); i.type = 'file'; i.id = 'palette-smoke-file'; i.accept = 'image/*,video/mp4'; document.body.appendChild(i); i.click(); return true; })()`);
+  result.dialogOpened = await waitFor(`!!document.querySelector('.panel.picker')`);
+  if (!result.dialogOpened) return result;
+  result.title = await shellJs(`document.querySelector('.panel.picker h2').textContent`);
+  result.modalHidesViews = manager.modalOpen;
+  await shot('picker.png', win.webContents);
+  // Navega como o usuário: lugar "Início" e duplo clique pasta a pasta até a pasta do arquivo
+  const home = app.getPath('home');
+  const rel = path.relative(home, path.dirname(file));
+  const segments = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep) : null;
+  if (segments) {
+    await shellJs(`[...document.querySelectorAll('.panel.picker .chip')].find((c) => c.textContent === 'Início').click()`);
+    await waitFor(`document.querySelector('.picker-path').textContent === ${JSON.stringify(home)}`);
+    let current = home;
+    for (const segment of segments) {
+      current = path.join(current, segment);
+      const found = await waitFor(`!!document.querySelector('.picker-row[title=' + JSON.stringify(${JSON.stringify(segment)}) + ']')`, 3000);
+      if (!found) break;
+      await shellJs(`document.querySelector('.picker-row[title=' + JSON.stringify(${JSON.stringify(segment)}) + ']').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+      await waitFor(`document.querySelector('.picker-path').textContent === ${JSON.stringify(current)}`);
+    }
+    result.navigatedTo = await shellJs(`document.querySelector('.picker-path').textContent`);
+    result.listed = await shellJs(`document.querySelectorAll('.picker-row').length`);
+    result.onlyImagesAndVideos = await shellJs(`[...document.querySelectorAll('.picker-row')].every((r) => r.querySelector('svg path[d^="M22"]') || /\\.(png|jpe?g|gif|webp|bmp|heic|heif|avif|svg|mp4)$/i.test(r.title))`);
+    await shellJs(`document.querySelector('.picker-row[title="icon.png"]').click()`);
+    result.chooseEnabled = await shellJs(`!document.querySelector('.panel.picker .btn.primary').disabled`);
+    await shellJs(`document.querySelector('.panel.picker .btn.primary').click()`);
+  } else {
+    await shellJs(`window.palette.pickerResult(${JSON.stringify([file])})`);
+    await shellJs(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  }
+  result.dialogClosed = await waitFor(`!document.querySelector('.panel.picker')`);
+  await delay(600);
+  result.delivered = await probe(`(() => { const i = document.getElementById('palette-smoke-file'); return { count: i.files.length, name: i.files[0] && i.files[0].name, size: i.files[0] && i.files[0].size }; })()`);
+  result.modalClosed = !manager.modalOpen;
+  // Cancelar: Esc fecha sem entregar nada
+  await probe(`document.getElementById('palette-smoke-file').click()`);
+  await waitFor(`!!document.querySelector('.panel.picker')`);
+  await shellJs(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  result.cancelClosed = await waitFor(`!document.querySelector('.panel.picker')`);
+  await delay(300);
+  result.keptAfterCancel = await probe(`document.getElementById('palette-smoke-file').files.length`);
+  // Salvar: nome sugerido editável, "Salvar aqui" devolve o caminho na pasta mostrada
+  const savePromise = picker.save({ suggestedName: 'palette-teste.txt' });
+  await waitFor(`!!document.querySelector('.panel.picker input.input')`);
+  await shot('picker-save.png', win.webContents);
+  await shellJs(`(() => { const i = document.querySelector('.panel.picker input.input'); i.value = 'palette-smoke.txt'; return true; })()`);
+  const shownDir = await shellJs(`document.querySelector('.picker-path').textContent`);
+  await shellJs(`document.querySelector('.panel.picker .btn.primary').click()`);
+  const saved = await Promise.race([savePromise, delay(5000).then(() => 'timeout')]);
+  result.save = { shownDir, saved, ok: saved === path.join(shownDir, 'palette-smoke.txt') };
+  await probe(`document.getElementById('palette-smoke-file').remove()`);
+  return result;
 }
 
 // ---------- atualização automática (GitHub Releases, como no Vincii Canvas) ----------
