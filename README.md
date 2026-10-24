@@ -52,7 +52,7 @@ O app verifica ao abrir, a cada hora e quando a janela volta ao foco. Em **Confi
 
 ## Segurança e privacidade
 
-Cada conta é o WhatsApp Web oficial numa sessão isolada e sem acesso ao sistema (sandbox do Chromium, sem Node na página). O app não coleta nada: mensagens, mídias e a sessão ficam só no seu computador, no perfil do usuário. Links abrem no navegador do sistema, as views não saem de `web.whatsapp.com`, e o WhatsApp só recebe as permissões de que precisa (microfone, câmera, notificações, compartilhar tela). Atualizações vêm do GitHub por HTTPS com verificação de integridade.
+Cada conta é o WhatsApp Web oficial numa sessão isolada e sem acesso ao sistema (sandbox do Chromium, sem Node na página). O app não coleta nada: mensagens, mídias e a sessão ficam só no seu computador, no perfil do usuário. Links abrem no navegador do sistema, as views não saem de `web.whatsapp.com`, e o WhatsApp só recebe as permissões de que precisa (microfone, câmera, notificações, compartilhar tela). Atualizações vêm do GitHub por HTTPS com verificação de integridade. No macOS, na primeira notificação o sistema pode pedir permissão para o Palette avisar; permita para receber as mensagens com a janela minimizada ou em outra conta.
 
 ## Permissões de chamada
 

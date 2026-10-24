@@ -801,6 +801,44 @@ function main() {
     const initialUrl = protocolUrlFromArgv(process.argv) || pendingProtocolUrl;
     if (initialUrl) handleProtocolUrl(initialUrl);
 
+    // PALETTE_TEST_NOTIFY=1: diagnóstico de notificações — minimiza a janela, dispara uma notificação pelo
+    // processo principal e outra pela página da conta ativa (HTML5, o caminho que o WhatsApp Web usa) e
+    // registra o estado da página (foco/visibilidade) e o resultado de cada uma.
+    if (process.env.PALETTE_TEST_NOTIFY) {
+      const entry = manager.entries.get(manager.activeId);
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const test = async () => {
+        const wc = entry.view.webContents;
+        await wait(3000);
+        console.log('[notify-test] Notification.isSupported:', Notification.isSupported());
+        win.minimize();
+        await wait(1500);
+        const state = await wc.executeJavaScript(`({ hidden: document.hidden, visibility: document.visibilityState, hasFocus: document.hasFocus(), permission: Notification.permission, patched: !!window.__palettePatched })`, true).catch((e) => String(e));
+        console.log('[notify-test] página com a janela minimizada:', JSON.stringify(state));
+        const main = new Notification({ title: 'Palette (processo principal)', body: 'Teste com a janela minimizada' });
+        main.on('show', () => console.log('[notify-test] principal: show'));
+        main.on('failed', (_event, error) => console.log('[notify-test] principal: failed', error));
+        main.show();
+        const page = await wc
+          .executeJavaScript(`new Promise((resolve) => { try { const n = new Notification('Palette (página)', { body: 'Teste HTML5 com a janela minimizada' }); n.onshow = () => resolve('show'); n.onerror = () => resolve('error'); n.onclose = () => resolve('close'); setTimeout(() => resolve('sem evento em 4 s'), 4000); } catch (e) { resolve('exceção: ' + e.message); } })`, true)
+          .catch((e) => String(e));
+        console.log('[notify-test] página:', page);
+        await wait(3000);
+        // macOS (Electron ≥ 42): o que o Notification Center de fato entregou para este app
+        if (typeof Notification.getHistory === 'function') {
+          const history = await Notification.getHistory().catch((e) => `erro: ${e.message}`);
+          console.log('[notify-test] histórico do Notification Center:', Array.isArray(history) ? JSON.stringify(history.map((n) => n.title)) : history);
+        }
+        win.restore();
+        console.log('[notify-test] fim');
+        app.exit(0);
+      };
+      if (entry) {
+        if (entry.loaded) test();
+        else entry.view.webContents.once('did-finish-load', test);
+      }
+    }
+
     if (SMOKE_DIR) {
       try {
         await runSmoke(SMOKE_DIR);
