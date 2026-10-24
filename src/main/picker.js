@@ -115,9 +115,9 @@ function createPicker({ sendCommand, fromShell }) {
       sendCommand('picker', spec);
     });
 
-  ipcMain.handle('shell:picker-list', (event, dir) => {
+  ipcMain.handle('shell:picker-list', (event, dir, all) => {
     if (!fromShell(event)) return null;
-    return listDir(String(dir || ''), pending ? pending.spec.exts : null);
+    return listDir(String(dir || ''), all || !pending ? null : pending.spec.exts);
   });
   ipcMain.on('shell:picker-result', (event, result) => {
     if (!fromShell(event) || !pending) return;

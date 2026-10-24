@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('palette', {
   openPrivacy: () => ipcRenderer.send('shell:open-privacy'),
   checkUpdate: () => ipcRenderer.invoke('shell:check-update'),
   testFileDialog: () => ipcRenderer.invoke('shell:test-file-dialog'),
-  pickerList: (dir) => ipcRenderer.invoke('shell:picker-list', dir),
+  pickerList: (dir, all) => ipcRenderer.invoke('shell:picker-list', dir, !!all),
   pickerResult: (result) => ipcRenderer.send('shell:picker-result', result),
   installUpdate: () => ipcRenderer.send('shell:install-update'),
   openExternal: (url) => ipcRenderer.send('shell:open-external', url),

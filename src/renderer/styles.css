@@ -413,6 +413,7 @@ body[data-platform='darwin'] #rail { padding-top: 48px; } /* espaço para os bot
 .panel.picker { width: min(680px, 100%); }
 .picker-bar { display: flex; align-items: center; gap: 10px; }
 .picker-path { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); word-break: break-all; }
+.picker-all { flex: none; }
 .picker-list { min-height: 180px; max-height: 44vh; overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
 .picker-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: default; }
 .picker-row svg { width: 18px; height: 18px; flex: none; color: var(--muted); }

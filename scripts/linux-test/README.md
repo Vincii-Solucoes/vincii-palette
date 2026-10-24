@@ -10,6 +10,7 @@ cp release.nosync/Palette-*-linux-arm64.deb scripts/linux-test/palette.deb
 cd scripts/linux-test && mkdir -p out
 docker build -t palette-linux-test .
 docker run --rm -v "$PWD/out:/out" palette-linux-test /run-test.sh gtk     # ou: portal | auto
+docker run --rm -v "$PWD/out:/out" palette-linux-test /run-smoke.sh        # smoke completo (seletor do Palette)
 colima stop
 ```
 

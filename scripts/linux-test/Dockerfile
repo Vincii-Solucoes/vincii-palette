@@ -8,5 +8,6 @@ COPY palette.deb /tmp/palette.deb
 RUN apt-get update && apt-get install -y --no-install-recommends /tmp/palette.deb && rm -rf /var/lib/apt/lists/* /tmp/palette.deb
 RUN mkdir -p /root/profile && printf '%s' '{"accounts":[{"id":"t","name":"Teste","color":"#5EB0FF","muted":false}],"activeId":"t","bounds":{"x":40,"y":40,"width":1100,"height":700,"maximized":false},"settings":{"startAtLogin":false,"closeToTray":true,"spellLanguages":["pt-BR"],"theme":"dark","fileDialog":"gtk"}}' > /root/profile/palette.json
 COPY run-test.sh /run-test.sh
-RUN chmod +x /run-test.sh
+COPY run-smoke.sh /run-smoke.sh
+RUN chmod +x /run-test.sh /run-smoke.sh
 CMD ["/run-test.sh"]

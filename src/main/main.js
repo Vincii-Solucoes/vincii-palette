@@ -158,7 +158,7 @@ function createWindow() {
     store,
     isDev,
     pickFiles: (spec) => picker.open(spec),
-    pickSave: useOwnPicker ? (spec) => picker.save(spec) : null,
+    pickSave: useOwnPicker || SMOKE_DIR ? (spec) => picker.save(spec) : null,
     interceptChooser: useOwnPicker || !!SMOKE_DIR, // no smoke, testa a entrega do arquivo mesmo no macOS
   });
   manager.on('change', onAccountsChanged);
@@ -705,7 +705,7 @@ async function runSmoke(dir) {
   await step('gerenciador testado');
 
   // 4. Seletor do Palette: <input type=file> da página abre o diálogo da barra; a escolha chega ao input via protocolo
-  info.picker = await smokePicker({ wc, shellJs, probe, shot, delay }).catch((e) => ({ erro: e.message }));
+  info.picker = await smokePicker({ dir, wc, shellJs, probe, shot, delay }).catch((e) => ({ erro: e.message }));
   await step('seletor testado');
   info.url = wc.getURL();
   info.page = await probe(`(() => ({
@@ -729,7 +729,7 @@ async function runSmoke(dir) {
   console.log('[smoke]', JSON.stringify(info, null, 2));
 }
 
-async function smokePicker({ wc, shellJs, probe, shot, delay }) {
+async function smokePicker({ dir, wc, shellJs, probe, shot, delay }) {
   const result = {};
   const waitFor = async (code, timeout = 6000) => {
     const until = Date.now() + timeout;
@@ -739,9 +739,13 @@ async function smokePicker({ wc, shellJs, probe, shot, delay }) {
     }
     return false;
   };
-  const file = path.join(__dirname, '..', '..', 'build', 'icon.png');
+  // build/icon.png fica fora do asar: na árvore do projeto (dev) ou em resources/build (extraResources, app empacotado)
+  const source = [path.join(__dirname, '..', '..', 'build', 'icon.png'), path.join(process.resourcesPath || '', 'build', 'icon.png')].find((p) => fs.existsSync(p));
+  const file = path.join(dir, 'smoke-icon.png');
+  if (source) fs.copyFileSync(source, file);
   result.attached = wc.debugger.isAttached();
-  result.fsaRemovable = await probe(`(() => { const had = 'showOpenFilePicker' in window; try { delete window.showOpenFilePicker; } catch (e) { return 'erro: ' + e.message; } return had && !('showOpenFilePicker' in window); })()`);
+  // No Linux o preload já apagou a File System Access API; nos outros sistemas confere que o delete funciona neste Chromium
+  result.fsaAbsentAfterDelete = await probe(`(() => { try { delete window.showOpenFilePicker; } catch (e) { return 'erro: ' + e.message; } return !('showOpenFilePicker' in window); })()`);
   if (!fs.existsSync(file) || !result.attached) return result;
   // Abrir: o clique no input (com gesto de usuário) deve abrir o diálogo da barra, e não o do sistema
   await probe(`(() => { const i = document.createElement('input'); i.type = 'file'; i.id = 'palette-smoke-file'; i.accept = 'image/*,video/mp4'; document.body.appendChild(i); i.click(); return true; })()`);
@@ -768,7 +772,12 @@ async function smokePicker({ wc, shellJs, probe, shot, delay }) {
     result.navigatedTo = await shellJs(`document.querySelector('.picker-path').textContent`);
     result.listed = await shellJs(`document.querySelectorAll('.picker-row').length`);
     result.onlyImagesAndVideos = await shellJs(`[...document.querySelectorAll('.picker-row')].every((r) => r.querySelector('svg path[d^="M22"]') || /\\.(png|jpe?g|gif|webp|bmp|heic|heif|avif|svg|mp4)$/i.test(r.title))`);
-    await shellJs(`document.querySelector('.picker-row[title="icon.png"]').click()`);
+    await shellJs(`document.querySelector('.picker-all').click()`);
+    await waitFor(`document.querySelectorAll('.picker-row').length > ${result.listed}`, 3000);
+    result.listedAll = await shellJs(`document.querySelectorAll('.picker-row').length`);
+    await shellJs(`document.querySelector('.picker-all').click()`);
+    await waitFor(`document.querySelectorAll('.picker-row').length === ${result.listed}`, 3000);
+    await shellJs(`document.querySelector('.picker-row[title="smoke-icon.png"]').click()`);
     result.chooseEnabled = await shellJs(`!document.querySelector('.panel.picker .btn.primary').disabled`);
     await shellJs(`document.querySelector('.panel.picker .btn.primary').click()`);
   } else {
@@ -796,6 +805,33 @@ async function smokePicker({ wc, shellJs, probe, shot, delay }) {
   const saved = await Promise.race([savePromise, delay(5000).then(() => 'timeout')]);
   result.save = { shownDir, saved, ok: saved === path.join(shownDir, 'palette-smoke.txt') };
   await probe(`document.getElementById('palette-smoke-file').remove()`);
+  // Download pela página (como "baixar" no WhatsApp): vai para o temporário e o diálogo pergunta o destino
+  const downloaded = path.join(dir, 'download-smoke.txt');
+  fs.rmSync(downloaded, { force: true });
+  await probe(`(() => { const a = document.createElement('a'); a.href = 'data:text/plain,palette%20smoke'; a.download = 'download-smoke.txt'; document.body.appendChild(a); a.click(); a.remove(); return true; })()`);
+  result.download = { dialog: await waitFor(`!!document.querySelector('.panel.picker input.input')`, 8000) };
+  if (result.download.dialog) {
+    result.download.suggested = await shellJs(`document.querySelector('.panel.picker input.input').value`);
+    const relOut = path.relative(home, dir);
+    if (relOut && !relOut.startsWith('..')) {
+      await shellJs(`[...document.querySelectorAll('.panel.picker .chip')].find((c) => c.textContent === 'Início').click()`);
+      await waitFor(`document.querySelector('.picker-path').textContent === ${JSON.stringify(home)}`);
+      let current = home;
+      for (const segment of relOut.split(path.sep)) {
+        current = path.join(current, segment);
+        if (!(await waitFor(`!!document.querySelector('.picker-row[title=' + JSON.stringify(${JSON.stringify(segment)}) + ']')`, 3000))) break;
+        await shellJs(`document.querySelector('.picker-row[title=' + JSON.stringify(${JSON.stringify(segment)}) + ']').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+        await waitFor(`document.querySelector('.picker-path').textContent === ${JSON.stringify(current)}`);
+      }
+    }
+    result.download.dirShown = await shellJs(`document.querySelector('.picker-path').textContent`);
+    await shellJs(`document.querySelector('.panel.picker .btn.primary').click()`);
+    await waitFor(`!document.querySelector('.panel.picker')`);
+    const until = Date.now() + 5000;
+    while (Date.now() < until && !fs.existsSync(downloaded)) await delay(100);
+    result.download.saved = fs.existsSync(downloaded) && fs.readFileSync(downloaded, 'utf8') === 'palette smoke';
+    result.download.tempCleared = !fs.existsSync(path.join(app.getPath('temp'), 'palette-downloads', 'download-smoke.txt'));
+  }
   return result;
 }
 

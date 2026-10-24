@@ -275,7 +275,7 @@ const joinPath = (dir, name) => (state.platform === 'win32' ? (dir.endsWith('\\'
 const formatSize = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
 
 function openPicker(spec) {
-  picker = { spec, dir: spec.start, parent: null, entries: [], selected: new Set(), error: '', els: null };
+  picker = { spec, dir: spec.start, parent: null, entries: [], selected: new Set(), error: '', showAll: false, els: null };
   openModal({ type: 'picker' });
   loadDir(spec.start);
 }
@@ -283,7 +283,7 @@ function openPicker(spec) {
 async function loadDir(dir) {
   const current = picker;
   if (!current) return;
-  const result = await api.pickerList(dir);
+  const result = await api.pickerList(dir, current.showAll);
   if (!result || picker !== current) return;
   current.dir = result.dir;
   current.parent = result.parent;
@@ -321,11 +321,14 @@ function pickerPanel() {
   const status = el('p', { class: 'hint small picker-status' });
   const nameInput = spec.kind === 'save' ? el('input', { class: 'input', type: 'text', value: spec.suggestedName || '', spellcheck: 'false' }) : null;
   const okBtn = el('button', { type: 'submit', class: 'btn primary', text: spec.kind === 'save' ? 'Salvar aqui' : spec.multiple ? 'Anexar selecionados' : 'Escolher' });
+  const allBtn = spec.exts
+    ? el('button', { type: 'button', class: 'chip picker-all', text: 'Mostrar todos os arquivos', onclick: () => { p.showAll = !p.showAll; allBtn.classList.toggle('active', p.showAll); loadDir(p.dir); } })
+    : null;
   p.els = { pathBar, list, status, nameInput, okBtn };
   return el('form', { class: 'panel picker', onsubmit: (event) => { event.preventDefault(); submitPicker(); } }, [
     el('h2', { text: spec.title }),
     el('div', { class: 'chips' }, (spec.places || []).map((place) => el('button', { type: 'button', class: 'chip', text: place.label, onclick: () => loadDir(place.path) }))),
-    el('div', { class: 'picker-bar' }, [el('button', { type: 'button', class: 'btn ghost small', text: '↑ Pasta acima', onclick: () => p.parent && loadDir(p.parent) }), pathBar]),
+    el('div', { class: 'picker-bar' }, [el('button', { type: 'button', class: 'btn ghost small', text: '↑ Pasta acima', onclick: () => p.parent && loadDir(p.parent) }), pathBar, allBtn]),
     list,
     status,
     nameInput ? el('label', { class: 'field' }, [el('span', { text: 'Nome do arquivo' }), nameInput]) : null,
@@ -362,7 +365,7 @@ function renderPickerList() {
       return row;
     }),
   );
-  status.textContent = p.error || (p.entries.length === 1 ? '1 item' : p.entries.length ? `${p.entries.length} itens` : p.spec.exts ? 'Nenhum arquivo deste tipo nesta pasta.' : 'Pasta vazia.');
+  status.textContent = p.error || (p.entries.length === 1 ? '1 item' : p.entries.length ? `${p.entries.length} itens` : p.spec.exts && !p.showAll ? 'Nenhum arquivo deste tipo nesta pasta — "Mostrar todos os arquivos" tira o filtro.' : 'Pasta vazia.');
   okBtn.disabled = p.spec.kind === 'open' && !p.selected.size;
 }
 
