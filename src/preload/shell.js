@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('palette', {
   setSetting: (key, value) => ipcRenderer.invoke('shell:set-setting', key, value),
   pickImage: () => ipcRenderer.invoke('shell:pick-image'),
   openPrivacy: () => ipcRenderer.send('shell:open-privacy'),
+  testNotification: () => ipcRenderer.invoke('shell:test-notification'),
+  openNotificationSettings: () => ipcRenderer.send('shell:open-notification-settings'),
   checkUpdate: () => ipcRenderer.invoke('shell:check-update'),
   testFileDialog: () => ipcRenderer.invoke('shell:test-file-dialog'),
   pickerList: (dir, all) => ipcRenderer.invoke('shell:picker-list', dir, !!all),

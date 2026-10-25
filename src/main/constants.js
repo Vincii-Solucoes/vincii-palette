@@ -2,7 +2,7 @@
 // Constantes compartilhadas pelo processo principal.
 module.exports = {
   APP_NAME: 'Palette',
-  APP_ID: 'br.com.vincii.palette',
+  APP_ID: 'br.com.vincii.palette.desktop', // trocado em 25/10/2026: o id antigo ficou recusado pelo usernoted do macOS (ver AGENTS.md)
   BG: '#050505',
   /** Largura da barra lateral de contas (o WhatsApp ocupa o resto da janela). */
   RAIL_WIDTH: 72,

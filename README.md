@@ -59,6 +59,10 @@ Cada conta é o WhatsApp Web oficial numa sessão isolada e sem acesso ao sistem
 
 No Linux, anexar (fotos e vídeos, áudio, documentos) e salvar usam por padrão o **seletor do Palette**: um diálogo do próprio app, com atalhos para Início, Imagens, Vídeos, Música, Downloads, Documentos e Área de trabalho, que abre já na pasta certa para o tipo pedido, aceita duplo clique e entrega o arquivo ao WhatsApp por dentro — sem depender do GTK, do KDE nem do portal do sistema. Em Configurações › Seletor de arquivos dá para voltar ao diálogo nativo (GTK, portal ou automático), e o botão **Testar seletor agora** abre o seletor em uso. A troca vale na próxima abertura do app. No macOS e no Windows o seletor é sempre o do sistema.
 
+## Notificações
+
+As mensagens chegam como notificações do sistema; clicar nelas traz o Palette já na conta certa e abre a conversa. No **macOS**, na primeira abertura o sistema pergunta se o Palette pode enviar notificações — escolha **Permitir**; se as notificações não aparecem, use *Configurações › Notificações › Enviar notificação de teste* e *Abrir ajustes de notificações* (Ajustes do Sistema › Notificações › Palette) e confira se não há um Foco ativo. No **Linux** o clique funciona em qualquer ambiente que siga a especificação freedesktop (GNOME, KDE, XFCE, Cinnamon…).
+
 ## Permissões de chamada
 
 Na primeira chamada o sistema pede **microfone** e **câmera** (textos em pt-BR no Info.plist). Se forem negados, *Configurações › Chamadas de voz e vídeo* mostra o estado e abre os ajustes de privacidade (macOS/Windows). Compartilhar tela usa o seletor nativo no macOS 15+; nos demais sistemas vai a tela principal.

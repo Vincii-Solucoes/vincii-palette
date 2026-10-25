@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="Palette"
-BUNDLE_ID="br.com.vincii.palette"
+BUNDLE_ID="br.com.vincii.palette.desktop"
 VERSION=$(node -p "require('./package.json').version")
 # Sufixo .nosync: o iCloud (que sincroniza ~/Desktop) ignora a pasta — 400 MB por build fora da fila de sync
 OUT="release.nosync"

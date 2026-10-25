@@ -509,6 +509,13 @@ function registerIpc() {
   });
   shellHandle('shell:set-setting', (_event, key, value) => applySetting(String(key), value));
   shellOn('shell:open-privacy', () => openPrivacySettings());
+  // Configurações › Notificações: dispara uma notificação de verdade (no macOS, a primeira faz o sistema pedir
+  // permissão) e abre o painel de notificações do sistema para o usuário conferir/permitir
+  shellHandle('shell:test-notification', () => notify('Teste do Palette', 'Se você está vendo isto, as notificações funcionam.', () => showWindow()));
+  shellOn('shell:open-notification-settings', () => {
+    if (isMac) shell.openExternal(`x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=${APP_ID}`);
+    else if (isWin) shell.openExternal('ms-settings:notifications');
+  });
   shellHandle('shell:check-update', () => checkForUpdates(true));
   // Diagnóstico do seletor de arquivos: abre o diálogo pelo processo principal (mesmo mecanismo do WhatsApp) e mede
   shellHandle('shell:test-file-dialog', async () => {
@@ -1055,6 +1062,15 @@ function main() {
     }
 
     if (!SMOKE_DIR) setupAutoUpdate();
+    // macOS: a permissão de notificações é pedida na primeira notificação do app. Disparamos uma de boas-vindas na
+    // primeira abertura, com o usuário presente, para ele responder "Permitir" na hora — um pedido deixado sem
+    // resposta (app fechado antes) deixa o bundle recusado dali em diante (ver AGENTS.md).
+    if (isMac && !SMOKE_DIR && !store.get('notifyIntroduced') && !process.env.PALETTE_TEST_NOTIFY && !process.env.PALETTE_TEST_NOTIFY_CLICK) {
+      setTimeout(() => {
+        store.set('notifyIntroduced', true);
+        notify('Notificações do Palette ativadas', 'As mensagens do WhatsApp vão aparecer aqui. Se o macOS perguntar, escolha Permitir.', () => showWindow());
+      }, 5000);
+    }
     if (store.get('settings').alwaysOnTop) win.setAlwaysOnTop(true);
     if (!SMOKE_DIR) applyGlobalShortcut(!!store.get('settings').globalShortcut);
 
@@ -1070,6 +1086,13 @@ function main() {
 
     const initialUrl = protocolUrlFromArgv(process.argv) || pendingProtocolUrl;
     if (initialUrl) handleProtocolUrl(initialUrl);
+
+    // Diagnósticos no macOS não encerram sozinhos: se o pedido de permissão de notificações estiver na tela e o app
+    // sair antes da resposta, o sistema passa a recusar o bundle. PALETTE_TEST_EXIT=1 força a saída.
+    const finishDiag = (code = 0) => {
+      if (isMac && !process.env.PALETTE_TEST_EXIT) return console.log('[diag] macOS: o app fica aberto (responda ao pedido de permissão, se houver); PALETTE_TEST_EXIT=1 encerra sozinho.');
+      app.exit(code);
+    };
 
     // PALETTE_TEST_NOTIFY=1: diagnóstico de notificações — minimiza a janela, dispara uma notificação pelo
     // processo principal e outra pela página da conta ativa (HTML5, o caminho que o WhatsApp Web usa) e
@@ -1101,12 +1124,58 @@ function main() {
         }
         win.restore();
         console.log('[notify-test] fim');
-        app.exit(0);
+        finishDiag(0);
       };
       if (entry) {
         if (entry.loaded) test();
         else entry.view.webContents.once('did-finish-load', test);
       }
+    }
+
+    // PALETTE_TEST_NOTIFY_CLICK=1: diagnóstico do clique na notificação — garante duas contas, deixa a primeira
+    // ativa, dispara uma notificação HTML5 pela página da SEGUNDA (o caminho do WhatsApp Web) e espera o clique
+    // (wa:notification-click) por até PALETTE_TEST_NOTIFY_CLICK_WAIT ms (60 s), registrando se a conta ativa trocou
+    // e se o onclick da página disparou. No Linux em container, scripts/linux-test/run-notify.sh clica via dunstctl.
+    if (process.env.PALETTE_TEST_NOTIFY_CLICK) {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const log = (...args) => console.log('[notify-click]', ...args);
+      const test = async () => {
+        while (manager.accounts.length < 2) manager.add({ name: manager.accounts.length ? 'Segunda' : 'Primeira', color: ACCOUNT_COLORS[manager.accounts.length] });
+        const [first, second] = manager.accounts;
+        manager.select(first.id);
+        const entry = manager.entries.get(second.id);
+        const wc = entry.view.webContents;
+        await new Promise((resolve) => {
+          if (entry.loaded) return resolve();
+          wc.once('did-finish-load', resolve);
+          setTimeout(resolve, 25000);
+        });
+        await wait(2500);
+        let clicked = null;
+        ipcMain.on('wa:notification-click', (event) => {
+          clicked = manager.idOf(event.sender);
+          log('clique recebido da conta', clicked);
+        });
+        log('ativa antes:', manager.activeId, '| a notificação sai da conta', second.id, `(${second.name})`, '| janela focada:', win.isFocused());
+        const shown = await wc
+          .executeJavaScript(`new Promise((resolve) => { try { const n = new Notification('Palette: clique nesta notificação', { body: 'Teste do clique (conta ${second.name})' }); n.onshow = () => resolve('show'); n.onerror = () => resolve('error'); n.onclick = () => { document.title = 'palette-click-ok'; }; setTimeout(() => resolve('sem onshow em 4 s'), 4000); } catch (e) { resolve('exceção: ' + e.message); } })`, true)
+          .catch((e) => `erro: ${e.message}`);
+        log('notificação criada:', shown);
+        const until = Date.now() + (Number(process.env.PALETTE_TEST_NOTIFY_CLICK_WAIT) || 60000);
+        while (!clicked && Date.now() < until) await wait(250);
+        await wait(1000);
+        const pageClick = await wc.executeJavaScript('document.title', true).catch(() => '?');
+        log(clicked ? 'RESULTADO: o clique chegou ao app' : 'RESULTADO: nenhum clique chegou no tempo', '| onclick da página:', pageClick === 'palette-click-ok' ? 'disparou' : 'não disparou', '| ativa depois:', manager.activeId, clicked && manager.activeId === second.id ? '(trocou para a conta certa)' : '', '| janela visível:', win.isVisible(), 'focada:', win.isFocused());
+        if (typeof Notification.getHistory === 'function') {
+          const history = await Notification.getHistory().catch((e) => `erro: ${e.message}`);
+          log('histórico do Notification Center:', Array.isArray(history) ? JSON.stringify(history.map((n) => n.title)) : history);
+        }
+        finishDiag(0);
+      };
+      test().catch((e) => {
+        log('erro:', e.message);
+        finishDiag(1);
+      });
     }
 
     // PALETTE_TEST_FILE_DIALOG=1: diagnóstico do seletor de arquivos (Linux) — abre o diálogo pelo processo

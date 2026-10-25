@@ -86,6 +86,7 @@ let settingsKey = '';
 let dragId = null;
 let lastOverlay = -1;
 let fileDialogTest = null; // resultado do último "Testar seletor" (Linux)
+let notificationTest = null; // resultado do último "Enviar notificação de teste"
 let picker = null; // seletor de arquivos do Palette: { spec, dir, parent, entries, selected, error, els }
 
 const initials = (name) => {
@@ -240,7 +241,7 @@ function renderContent() {
   // Não reconstrói o formulário a cada atualização (perderia o que está sendo digitado); as configurações
   // só são reconstruídas quando algo que elas mostram muda (não a cada som ou mensagem), mantendo a rolagem.
   const isSettings = key === 'settings:';
-  const nextSettingsKey = isSettings ? JSON.stringify([state.settings, state.update, state.media, state.spellOptions, state.accounts.map((a) => [a.id, a.name, a.color, a.avatar, a.icon, (a.image || '').length, (a.photo || '').length, a.needsLink]), fileDialogTest]) : '';
+  const nextSettingsKey = isSettings ? JSON.stringify([state.settings, state.update, state.media, state.spellOptions, state.accounts.map((a) => [a.id, a.name, a.color, a.avatar, a.icon, (a.image || '').length, (a.photo || '').length, a.needsLink]), fileDialogTest, notificationTest]) : '';
   if (key === contentKey && (!isSettings || nextSettingsKey === settingsKey)) return;
   contentKey = key;
   settingsKey = nextSettingsKey;
@@ -628,6 +629,19 @@ function settingsPanel() {
       )),
     );
   }
+
+  // Notificações: teste real + atalho para os ajustes do sistema (no macOS a permissão é pedida na 1ª notificação)
+  items.push(el('h3', { text: 'Notificações' }));
+  items.push(el('p', { class: 'hint small', text: state.platform === 'darwin'
+    ? 'O macOS pergunta uma vez se o Palette pode notificar — escolha Permitir. Se nada aparece, confira em Ajustes do Sistema › Notificações › Palette (permitir, estilo Banners ou Alertas) e se não há um Foco ativo.'
+    : state.platform === 'linux'
+      ? 'Clicar na notificação traz a conta e abre a conversa. Se nada aparece, confira o serviço de notificações do seu ambiente gráfico.'
+      : 'Se nada aparece, confira em Configurações › Sistema › Notificações do Windows se o Palette está permitido.' }));
+  items.push(el('div', { class: 'actions start' }, [
+    el('button', { type: 'button', class: 'btn ghost small', text: 'Enviar notificação de teste', onclick: async () => { notificationTest = (await api.testNotification()) ? 'sent' : 'unsupported'; render(); } }),
+    state.platform !== 'linux' ? el('button', { type: 'button', class: 'btn ghost small', text: 'Abrir ajustes de notificações', onclick: () => api.openNotificationSettings() }) : null,
+  ]));
+  if (notificationTest) items.push(el('p', { class: `hint small${notificationTest === 'unsupported' ? ' bad' : ''}`, text: notificationTest === 'sent' ? 'Notificação enviada. Se ela não apareceu, o sistema está bloqueando: use "Abrir ajustes de notificações" e permita o Palette.' : 'Este sistema não oferece notificações para o Palette.' }));
 
   items.push(el('h3', { text: 'Chamadas de voz e vídeo' }));
   if (state.media) {
