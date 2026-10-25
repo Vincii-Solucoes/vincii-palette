@@ -41,6 +41,22 @@ const PATCH = `(() => {
   Object.defineProperty(PaletteNotification, 'permission', { get: () => Native.permission });
   Object.defineProperty(PaletteNotification, 'maxActions', { get: () => Native.maxActions });
   PaletteNotification.requestPermission = (...args) => Native.requestPermission(...args);
+  // Conta em segundo plano (não selecionada): a página se vê como aba em segundo plano — sem foco e oculta —
+  // para o WhatsApp notificar e não marcar como lidas mensagens que o usuário não está vendo.
+  let background = false;
+  const nativeHasFocus = Document.prototype.hasFocus;
+  const hiddenGet = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden').get;
+  const visibilityGet = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState').get;
+  Object.defineProperty(Document.prototype, 'hasFocus', { configurable: true, writable: true, value: function hasFocus() { return background ? false : nativeHasFocus.call(this); } });
+  Object.defineProperty(Document.prototype, 'hidden', { configurable: true, get() { return background ? true : hiddenGet.call(this); } });
+  Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get() { return background ? 'hidden' : visibilityGet.call(this); } });
+  window.__paletteSetBackground = (value) => {
+    value = !!value;
+    if (value === background) return;
+    background = value;
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event(value ? 'blur' : 'focus'));
+  };
   window.Notification = PaletteNotification;
 })();`;
 
@@ -50,6 +66,21 @@ document.addEventListener('palette:notification-click', () => ipcRenderer.send('
 
 ipcRenderer.on('wa:muted', (_event, muted) => {
   webFrame.executeJavaScript(`window.__paletteMuted = ${muted ? 'true' : 'false'};`).catch(() => {});
+});
+ipcRenderer.on('wa:background', (_event, background) => {
+  webFrame.executeJavaScript(`window.__paletteSetBackground && window.__paletteSetBackground(${background ? 'true' : 'false'});`).catch(() => {});
+});
+
+// Atender/recusar pela janelinha de chamada do Palette: clica no botão correspondente do aviso do WhatsApp
+const ACCEPT_RE = /aceitar|atender|accept|answer|aceptar|contestar/i;
+const DECLINE_RE = /recusar|decline|reject|rechazar|ignorar|ignore/i;
+ipcRenderer.on('wa:call-action', (_event, action) => {
+  const re = action === 'accept' ? ACCEPT_RE : DECLINE_RE;
+  const scope = ringing && ringing.node && ringing.node.isConnected ? ringing.node : document;
+  const label = (el) => `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.textContent || ''}`;
+  const target = Array.from(scope.querySelectorAll('button, [role="button"]')).find((el) => re.test(label(el)));
+  if (target) target.click();
+  ipcRenderer.send('wa:call-action-result', action, !!target);
 });
 
 // ---------- chamada recebida ----------
@@ -94,7 +125,8 @@ const observer = new MutationObserver((mutations) => {
       if (node.nodeType !== 1 || !smallEnough(node)) continue;
       const text = describe(node);
       if (text.length > 600 || !CALL_RE.test(text) || !ANSWER_RE.test(text)) continue;
-      startRinging(node, (node.textContent || '').trim());
+      const lines = String(node.innerText || node.textContent || '').split(/\n+/).map((l) => l.trim()).filter((l) => l && !ANSWER_RE.test(l));
+      startRinging(node, lines.join(' · ') || (node.textContent || '').trim());
       return;
     }
   }

@@ -1,0 +1,27 @@
+@font-face { font-family: 'Inter'; font-weight: 400; src: url('../../assets/fonts/Inter_400Regular.ttf'); }
+@font-face { font-family: 'Inter'; font-weight: 500; src: url('../../assets/fonts/Inter_500Medium.ttf'); }
+@font-face { font-family: 'Inter'; font-weight: 600; src: url('../../assets/fonts/Inter_600SemiBold.ttf'); }
+@font-face { font-family: 'Inter'; font-weight: 700; src: url('../../assets/fonts/Inter_700Bold.ttf'); }
+:root { --bg: #0b0b0b; --card: #141414; --border: rgba(255, 255, 255, 0.09); --text: #f2f2f2; --muted: #9a9a9a; --red: #e5484d; --green: #22c55e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, sans-serif; font-size: 13px; overflow: hidden; -webkit-user-select: none; user-select: none; }
+.card { height: 100%; display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; -webkit-app-region: drag; cursor: default; }
+.avatar { --c: #00c9b1; flex: none; width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: color-mix(in srgb, var(--c) 22%, #000); color: var(--c); border: 2px solid var(--c); font-weight: 700; font-size: 16px; letter-spacing: 0.5px; animation: pulse 1.6s ease-out infinite; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 55%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+.info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.title { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 14px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: blink 1s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+.who, .account { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who { color: var(--text); }
+.account { color: var(--muted); font-size: 12px; }
+.actions { flex: none; display: flex; gap: 10px; -webkit-app-region: no-drag; }
+.btn { width: 42px; height: 42px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #fff; cursor: pointer; transition: transform 0.12s ease, filter 0.12s ease; }
+.btn svg { width: 20px; height: 20px; }
+.btn:hover { transform: scale(1.06); filter: brightness(1.1); }
+.btn:active { transform: scale(0.96); }
+.decline { background: var(--red); }
+.decline .hangup { transform: rotate(135deg); }
+.accept { background: var(--green); animation: ring 1.1s ease-in-out infinite; }
+@keyframes ring { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(-14deg); } 30% { transform: rotate(12deg); } 45% { transform: rotate(-8deg); } 60% { transform: rotate(5deg); } 75% { transform: rotate(-2deg); } }

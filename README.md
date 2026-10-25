@@ -63,6 +63,10 @@ No Linux, anexar (fotos e vídeos, áudio, documentos) e salvar usam por padrão
 
 As mensagens chegam como notificações do sistema; clicar nelas traz o Palette já na conta certa e abre a conversa. No **macOS**, na primeira abertura o sistema pergunta se o Palette pode enviar notificações — escolha **Permitir**; se as notificações não aparecem, use *Configurações › Notificações › Enviar notificação de teste* e *Abrir ajustes de notificações* (Ajustes do Sistema › Notificações › Palette) e confira se não há um Foco ativo. No **Linux** o clique funciona em qualquer ambiente que siga a especificação freedesktop (GNOME, KDE, XFCE, Cinnamon…).
 
+## Chamadas
+
+Quando uma chamada chega em qualquer conta, uma **janelinha no canto da tela** mostra quem está ligando e em qual WhatsApp, com os botões Recusar e Atender — mesmo que você esteja em outra conta ou com o Palette escondido; na barra lateral a conta que toca ganha ondas vermelhas. Atender traz a conta para a tela e a chamada abre na janela própria do WhatsApp. A opção *Trocar para a conta que recebe a chamada* (Configurações › Geral) continua existindo, agora opcional.
+
 ## Permissões de chamada
 
 Na primeira chamada o sistema pede **microfone** e **câmera** (textos em pt-BR no Info.plist). Se forem negados, *Configurações › Chamadas de voz e vídeo* mostra o estado e abre os ajustes de privacidade (macOS/Windows). Compartilhar tela usa o seletor nativo no macOS 15+; nos demais sistemas vai a tela principal.

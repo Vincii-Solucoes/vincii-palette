@@ -13,6 +13,7 @@ const { AccountManager, sanitizeAccount } = require('./accounts');
 const { buildAppMenu } = require('./menu');
 const { createTray } = require('./tray');
 const { createPicker } = require('./picker');
+const { createCallPopup } = require('./callpopup');
 const { APP_NAME, APP_ID, BG, ACCOUNT_COLORS, DEFAULT_SPELL_LANGUAGES, SPELL_LANGUAGE_OPTIONS } = require('./constants');
 
 const isMac = process.platform === 'darwin';
@@ -66,6 +67,7 @@ let win = null;
 let manager = null;
 let tray = null;
 let picker = null;
+let callPopup = null; // janelinha de chamada no canto da tela
 let quitting = false;
 let pendingProtocolUrl = null;
 let lastUnreadTotal = 0;
@@ -471,6 +473,27 @@ function registerIpc() {
   });
   const lastCallSignal = new Map(); // por conta: evita rajadas de wa:incoming-call
   picker = createPicker({ sendCommand, fromShell });
+  callPopup = createCallPopup({
+    onAction: (id, action) => {
+      if (action === 'open') {
+        manager.select(id);
+        showWindow();
+        return;
+      }
+      if (!manager.callAction(id, action)) callPopup.hide(id);
+    },
+  });
+  // Resposta do preload ao atender/recusar: atendeu → traz a conta para a tela (a chamada abre em janela própria);
+  // botão não encontrado → traz a conta mesmo assim, para o usuário atender no próprio WhatsApp
+  ipcMain.on('wa:call-action-result', (event, action, found) => {
+    const id = manager.idOf(event.sender);
+    if (!id) return;
+    callPopup.hide(id);
+    if (action === 'accept' || !found) {
+      manager.select(id);
+      showWindow();
+    }
+  });
   shellHandle('shell:ready', () => fullState());
   shellOn('shell:select', (_event, id) => manager.select(String(id)));
   shellHandle('shell:add', (_event, data) => manager.add(sanitizeAccount(data || {})).id);
@@ -548,6 +571,11 @@ function registerIpc() {
     lastCallSignal.set(id, Date.now());
     const detail = String(text || '').slice(0, 120);
     manager.setRinging(id, detail);
+    // Janelinha no canto da tela: sempre que a chamada chega numa conta que não está na tela em foco
+    if (manager.activeId !== id || manager.modalOpen || !win || win.isDestroyed() || !win.isVisible() || !win.isFocused()) {
+      const snap = manager.state().accounts.find((a) => a.id === id) || account;
+      callPopup.show({ id, name: account.name, color: account.color, image: snap.avatar === 'image' ? snap.image : snap.avatar === 'photo' ? snap.photo : null, text: detail });
+    }
     if (store.get('settings').switchOnCall !== false && manager.activeId !== id) manager.select(id);
     if (win && !win.isDestroyed()) {
       if (!win.isVisible()) showWindow();
@@ -563,7 +591,9 @@ function registerIpc() {
   });
   ipcMain.on('wa:call-ended', (event) => {
     const id = manager.idOf(event.sender);
-    if (id) manager.clearRinging(id);
+    if (!id) return;
+    manager.clearRinging(id);
+    callPopup.hide(id);
   });
   ipcMain.on('wa:login-state', (event, loggedIn) => {
     const id = manager.idOf(event.sender);
@@ -687,7 +717,12 @@ async function runSmoke(dir) {
   });
   await delay(1500);
   const secondJs = (code) => secondEntry.view.webContents.executeJavaScript(code, true).catch((e) => `erro: ${e.message}`);
-  await secondJs(`(() => { const d = document.createElement('div'); d.id = 'palette-fake-call'; d.innerHTML = '<p>Chamada de voz recebida</p><p>Fulano</p><button aria-label="Aceitar">Aceitar</button><button>Recusar</button>'; document.body.appendChild(d); return true; })()`);
+  // Segundo plano: a conta fora da tela se vê oculta e sem foco; a ativa, visível
+  info.background = {
+    second: await secondJs(`({ hidden: document.hidden, visibility: document.visibilityState, hasFocus: document.hasFocus() })`),
+    first: await probe(`({ hidden: document.hidden, visibility: document.visibilityState })`),
+  };
+  await secondJs(`(() => { const d = document.createElement('div'); d.id = 'palette-fake-call'; d.innerHTML = '<p>Chamada de voz recebida</p><p>Fulano</p><button aria-label="Aceitar">Aceitar</button><button>Recusar</button>'; d.querySelector('button').addEventListener('click', () => { window.__fakeAccepted = true; }); document.body.appendChild(d); return true; })()`);
   await delay(800);
   await shot('ringing.png', win.webContents);
   info.call = {
@@ -695,6 +730,25 @@ async function runSmoke(dir) {
     switchedToSecond: manager.activeId === second.id,
     railRinging: await shellJs(`!!document.querySelector('.acc.ringing')`),
   };
+  // Janelinha de chamada: aparece com quem liga e a conta; "Atender" clica no botão do WhatsApp (aqui, o falso)
+  info.call.popupVisible = callPopup.isVisible();
+  const popupWc = callPopup.webContents();
+  info.call.popupText = popupWc ? await popupWc.executeJavaScript(`[document.getElementById('title').textContent, document.getElementById('who').textContent, document.getElementById('account').textContent].join(' | ')`).catch((e) => `erro: ${e.message}`) : null;
+  if (popupWc) await shot('call-popup.png', popupWc);
+  manager.select(first); // volta para a primeira: atender pela janelinha deve trazer a segunda
+  await delay(200);
+  if (popupWc) await popupWc.executeJavaScript(`document.getElementById('accept').click()`).catch(() => {});
+  await delay(800);
+  info.call.acceptedInPage = await secondJs('window.__fakeAccepted === true');
+  info.call.switchedAfterAccept = manager.activeId === second.id;
+  info.call.popupHiddenAfterAccept = !callPopup.isVisible();
+  // Popup do próprio WhatsApp (tela da chamada): vira janela de verdade, com a mesma sessão
+  const windowsBefore = BrowserWindow.getAllWindows().length;
+  await secondJs(`!!window.open('https://web.whatsapp.com/', '_blank', 'width=420,height=600')`);
+  await delay(1500);
+  const popups = BrowserWindow.getAllWindows().filter((w) => w !== win && w.webContents !== callPopup.webContents());
+  info.call.waPopup = { opened: BrowserWindow.getAllWindows().length > windowsBefore, url: popups[0] ? popups[0].webContents.getURL() : null, title: popups[0] ? popups[0].getTitle() : null };
+  for (const w of popups) w.close();
   await secondJs(`document.getElementById('palette-fake-call').remove()`);
   await delay(2500);
   info.call.clearedAfterRemove = !secondEntry.ringing;

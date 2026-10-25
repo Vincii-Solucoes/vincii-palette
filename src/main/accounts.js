@@ -123,9 +123,32 @@ class AccountManager extends EventEmitter {
 
     const wc = view.webContents;
     wc.setUserAgent(USER_AGENT);
+    // Popups do próprio WhatsApp Web viram janelas de verdade com a mesma sessão: é assim que a tela da chamada
+    // (voz/vídeo) abre. Negar isso (ou mandar para o navegador do sistema) fazia a chamada não conectar.
     wc.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith(WA_ORIGIN) || url === 'about:blank') {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 420,
+            height: 640,
+            minWidth: 320,
+            minHeight: 400,
+            title: `Chamada · ${account.name}`,
+            backgroundColor: BG,
+            autoHideMenuBar: true,
+            webPreferences: { partition, preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+          },
+        };
+      }
       if (/^https?:\/\//i.test(url)) shell.openExternal(url);
       return { action: 'deny' };
+    });
+    wc.on('did-create-window', (child) => {
+      child.webContents.on('will-navigate', (event, url) => {
+        if (!url.startsWith(WA_ORIGIN) && url !== 'about:blank') event.preventDefault();
+      });
+      child.on('page-title-updated', (event) => event.preventDefault()); // mantém "Chamada · conta"
     });
     // A view só navega dentro do WhatsApp Web; qualquer outro destino (clique ou redirecionamento do
     // servidor) é bloqueado e, se for http(s), vai para o navegador do sistema.
@@ -183,6 +206,7 @@ class AccountManager extends EventEmitter {
     });
     wc.on('context-menu', (_event, params) => this.showPageContextMenu(wc, params));
     if (this.interceptChooser) this.installFileChooser(wc, account);
+    wc.on('did-finish-load', () => this.pushBackground(account.id)); // página nova nasce sabendo se está em segundo plano
 
     this.win.contentView.addChildView(view);
     if (delay) setTimeout(() => !wc.isDestroyed() && wc.loadURL(WA_URL), delay);
@@ -201,7 +225,26 @@ class AccountManager extends EventEmitter {
   applyVisibility() {
     const showViews = !this.modalOpen;
     for (const [id, { view }] of this.entries) view.setVisible(showViews && id === this.activeId);
+    for (const id of this.entries.keys()) this.pushBackground(id);
     if (showViews) this.focusActive();
+  }
+
+  /**
+   * Conta fora da tela se vê como aba em segundo plano (sem foco e oculta, via preload): o WhatsApp então
+   * notifica as mensagens mesmo com o Palette em foco em outra conta e não marca como lidas as que ninguém viu.
+   */
+  pushBackground(id) {
+    const entry = this.entries.get(id);
+    if (!entry || entry.view.webContents.isDestroyed()) return;
+    entry.view.webContents.send('wa:background', this.modalOpen || id !== this.activeId);
+  }
+
+  /** Atender/recusar pela janelinha de chamada: o preload clica no botão do próprio WhatsApp. */
+  callAction(id, action) {
+    const entry = this.entries.get(id);
+    if (!entry || entry.view.webContents.isDestroyed()) return false;
+    entry.view.webContents.send('wa:call-action', action);
+    return true;
   }
 
   focusActive() {
