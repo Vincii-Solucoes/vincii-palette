@@ -8,6 +8,9 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { Menu, WebContentsView, clipboard, session, shell } = require('electron');
 const { RAIL_WIDTH, FRAME_MARGIN, FRAME_RADIUS, WA_URL, WA_ORIGIN, ACCOUNT_COLORS, BG, MAX_NAME_LENGTH, AVATAR_KINDS, ACCOUNT_ICON_KEYS, MAX_IMAGE_DATA_URL } = require('./constants');
+
+// Título da aba durante uma chamada recebida (pt-BR usa "Ligação"; "chamada" por garantia)
+const CALL_TITLE_RE = /(liga[çc][ãa]o|chamada) de (voz|v[ií]deo) recebida|incoming (voice|video) call|llamada .*entrante/i;
 const { configureSession, applySpellLanguages, USER_AGENT } = require('./wa-session');
 
 const PRELOAD = path.join(__dirname, '..', 'preload', 'whatsapp.js');
@@ -42,6 +45,7 @@ class AccountManager extends EventEmitter {
     this.pickFiles = pickFiles;
     this.pickSave = pickSave;
     this.interceptChooser = interceptChooser && typeof pickFiles === 'function';
+    this.popups = new Map(); // webContents das janelas abertas pela conta (pop-out da chamada) → id da conta
     this.entries = new Map(); // id → { view, unread, loaded }
     this.modalOpen = false;
     this.accounts = Array.isArray(store.get('accounts')) ? store.get('accounts') : [];
@@ -134,7 +138,7 @@ class AccountManager extends EventEmitter {
             height: 640,
             minWidth: 320,
             minHeight: 400,
-            title: `Chamada · ${account.name}`,
+            title: `Ligação · ${account.name}`,
             backgroundColor: BG,
             autoHideMenuBar: true,
             webPreferences: { partition, preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
@@ -144,11 +148,18 @@ class AccountManager extends EventEmitter {
       if (/^https?:\/\//i.test(url)) shell.openExternal(url);
       return { action: 'deny' };
     });
-    wc.on('did-create-window', (child) => {
-      child.webContents.on('will-navigate', (event, url) => {
+    wc.on('did-create-window', (child, details) => {
+      const popupWc = child.webContents; // dentro de 'closed' a janela já está destruída: guardar a referência antes
+      this.popups.set(popupWc, account.id);
+      this.emit('popup', account.id, details && details.url);
+      popupWc.on('will-navigate', (event, url) => {
         if (!url.startsWith(WA_ORIGIN) && url !== 'about:blank') event.preventDefault();
       });
-      child.on('page-title-updated', (event) => event.preventDefault()); // mantém "Chamada · conta"
+      child.on('page-title-updated', (event) => event.preventDefault()); // mantém "Ligação · conta"
+      popupWc.once('destroyed', () => {
+        this.popups.delete(popupWc);
+        if (entry.callSource === popupWc) entry.callSource = null;
+      });
     });
     // A view só navega dentro do WhatsApp Web; qualquer outro destino (clique ou redirecionamento do
     // servidor) é bloqueado e, se for http(s), vai para o navegador do sistema.
@@ -163,6 +174,12 @@ class AccountManager extends EventEmitter {
     // O WhatsApp Web põe as não lidas no título: "(3) WhatsApp"
     // (ao chegar mensagem o título pisca; espera assentar para não redesenhar a barra a cada piscada)
     wc.on('page-title-updated', (_event, title) => {
+      // Enquanto toca, o WhatsApp alterna o título com "Ligação de voz recebida de X" a cada 2 s: é sinal de chamada
+      // (não mexe nas não lidas); o preload confirma começo e fim pelo poll da UI
+      if (CALL_TITLE_RE.test(title)) {
+        this.emit('call-title', account.id, title.replace(/^[^\p{L}]+/u, '').replace(/(recebida|entrante|call)\s+(de|from|von)\s+/i, '$1 · ').trim());
+        return;
+      }
       const match = /^\((\d+)\)/.exec(title);
       const unread = match ? Number(match[1]) : 0;
       clearTimeout(entry.unreadTimer);
@@ -206,7 +223,11 @@ class AccountManager extends EventEmitter {
     });
     wc.on('context-menu', (_event, params) => this.showPageContextMenu(wc, params));
     if (this.interceptChooser) this.installFileChooser(wc, account);
-    wc.on('did-finish-load', () => this.pushBackground(account.id)); // página nova nasce sabendo se está em segundo plano
+    wc.on('dom-ready', () => this.pushBackground(account.id)); // página nova nasce sabendo se está em segundo plano
+    wc.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && !details.isSameDocument) this.clearRinging(account.id); // recarga no meio do toque
+    });
+    wc.on('did-finish-load', () => this.pushBackground(account.id));
 
     this.win.contentView.addChildView(view);
     if (delay) setTimeout(() => !wc.isDestroyed() && wc.loadURL(WA_URL), delay);
@@ -235,15 +256,24 @@ class AccountManager extends EventEmitter {
    */
   pushBackground(id) {
     const entry = this.entries.get(id);
-    if (!entry || entry.view.webContents.isDestroyed()) return;
-    entry.view.webContents.send('wa:background', this.modalOpen || id !== this.activeId);
+    const account = this.find(id);
+    if (!entry || !account || entry.view.webContents.isDestroyed()) return;
+    const background = this.modalOpen || id !== this.activeId;
+    entry.view.webContents.send('wa:background', background, !background && this.win.isFocused(), account.name);
+  }
+
+  pushAllBackground() {
+    for (const id of this.entries.keys()) this.pushBackground(id);
   }
 
   /** Atender/recusar pela janelinha de chamada: o preload clica no botão do próprio WhatsApp. */
   callAction(id, action) {
     const entry = this.entries.get(id);
-    if (!entry || entry.view.webContents.isDestroyed()) return false;
-    entry.view.webContents.send('wa:call-action', action);
+    if (!entry) return false;
+    // quem detectou a chamada (view ou pop-out) é quem tem o botão
+    const target = entry.callSource && !entry.callSource.isDestroyed() ? entry.callSource : entry.view.webContents;
+    if (target.isDestroyed()) return false;
+    target.send('wa:call-action', action);
     return true;
   }
 
@@ -265,7 +295,7 @@ class AccountManager extends EventEmitter {
 
   idOf(webContents) {
     for (const [id, { view }] of this.entries) if (view.webContents === webContents) return id;
-    return null;
+    return this.popups.get(webContents) || null;
   }
 
   // ---------- ações ----------
@@ -440,17 +470,31 @@ class AccountManager extends EventEmitter {
     this.changed();
   }
 
-  setRinging(id, text) {
+  setRinging(id, text, source = null) {
     const entry = this.entries.get(id);
     if (!entry) return;
-    entry.ringing = text || 'Chamada recebida';
+    entry.ringing = text || 'Ligação recebida';
+    if (source) entry.callSource = source;
+    this.touchRinging(id);
     this.emit('change', this.state());
+  }
+
+  /** Re-arma o vigia do toque: só título (sem o preload confirmar) morre em 6,5 s sem novo título; com preload, 95 s. */
+  touchRinging(id) {
+    const entry = this.entries.get(id);
+    if (!entry || !entry.ringing) return;
+    clearTimeout(entry.ringTimer);
+    entry.ringTimer = setTimeout(() => this.clearRinging(id), entry.callSource ? 95000 : 6500);
   }
 
   clearRinging(id) {
     const entry = this.entries.get(id);
-    if (!entry || !entry.ringing) return;
+    if (!entry) return;
+    clearTimeout(entry.ringTimer);
+    entry.callSource = null;
+    if (!entry.ringing) return;
     entry.ringing = null;
+    this.emit('call-cleared', id);
     this.emit('change', this.state());
   }
 

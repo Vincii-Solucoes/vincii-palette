@@ -149,6 +149,7 @@ function render() {
 function createAccountButton() {
   const button = el('button', { type: 'button', class: 'acc', draggable: true });
   button.append(
+    el('span', { class: 'ring' }), // anel da chamada (atrás do avatar)
     el('span', { class: 'avatar' }),
     el('span', { class: 'badge', hidden: true }),
     el('span', { class: 'warn', text: '!', hidden: true, title: 'Precisa vincular de novo (QR code)' }),
@@ -206,7 +207,7 @@ function updateAccountButton(button, account, index) {
   button.classList.toggle('warn-state', !!account.needsLink);
   button.style.setProperty('--c', account.color);
   const parts = [];
-  if (account.ringing) parts.push('Chamada recebida');
+  if (account.ringing) parts.push('Ligação recebida');
   if (account.needsLink) parts.push('Precisa vincular de novo (QR code)');
   parts.push(`${account.name}${index < 9 ? ` (${shortcut(index + 1)})` : ''}`);
   button.title = `${parts.join(' · ')} · duplo clique ou botão direito: nome, cor, silenciar`;

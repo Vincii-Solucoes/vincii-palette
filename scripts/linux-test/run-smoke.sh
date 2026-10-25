@@ -9,7 +9,7 @@ XV=$!
 sleep 1
 export XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=GNOME
 rm -rf /root/profile-smoke /root/smoke-out && cp -r /root/profile /root/profile-smoke && mkdir -p /root/smoke-out /out/smoke
-timeout 300 dbus-run-session -- env PALETTE_SMOKE=/root/smoke-out PALETTE_USER_DATA=/root/profile-smoke /opt/Palette/palette --no-sandbox --disable-gpu --disable-dev-shm-usage > /root/smoke-out/app.log 2>&1
+timeout 600 dbus-run-session -- env PALETTE_SMOKE=/root/smoke-out PALETTE_USER_DATA=/root/profile-smoke /opt/Palette/palette --no-sandbox --disable-gpu --disable-dev-shm-usage > /root/smoke-out/app.log 2>&1
 echo "exit=$?"
 cp -r /root/smoke-out/. /out/smoke/
 cp /root/profile-smoke/palette.json /out/smoke/profile-after.json

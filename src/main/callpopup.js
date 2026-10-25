@@ -32,7 +32,7 @@ function createCallPopup({ onAction }) {
       alwaysOnTop: true,
       hasShadow: true,
       backgroundColor: BG,
-      title: 'Chamada',
+      title: 'Ligação',
       webPreferences: { preload: path.join(__dirname, '..', 'preload', 'call.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     win.setAlwaysOnTop(true, 'screen-saver');

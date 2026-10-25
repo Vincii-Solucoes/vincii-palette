@@ -65,7 +65,7 @@ As mensagens chegam como notificações do sistema; clicar nelas traz o Palette 
 
 ## Chamadas
 
-Quando uma chamada chega em qualquer conta, uma **janelinha no canto da tela** mostra quem está ligando e em qual WhatsApp, com os botões Recusar e Atender — mesmo que você esteja em outra conta ou com o Palette escondido; na barra lateral a conta que toca ganha ondas vermelhas. Atender traz a conta para a tela e a chamada abre na janela própria do WhatsApp. A opção *Trocar para a conta que recebe a chamada* (Configurações › Geral) continua existindo, agora opcional.
+Quando uma chamada chega em qualquer conta, uma **janelinha no canto da tela** mostra quem está ligando e em qual WhatsApp, com os botões Recusar e Atender — mesmo que você esteja em outra conta ou com o Palette escondido; na barra lateral a conta que toca ganha um anel vermelho girando e o avatar pulsando. Atender traz a conta para a tela; a chamada acontece no painel do próprio WhatsApp (ou na janela separada, se você usar "Mover para nova janela"). A opção *Trocar para a conta que recebe a chamada* (Configurações › Geral) continua existindo, agora opcional.
 
 ## Permissões de chamada
 

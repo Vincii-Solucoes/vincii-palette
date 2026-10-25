@@ -4,14 +4,17 @@
 //    notificação é clicada — a janela vem para frente já na conta certa — e (b) silenciar a conta:
 //    as notificações viram objetos inertes, sem o WhatsApp perceber (ele continua achando que tem
 //    permissão, então não mostra o aviso "ative as notificações").
-// 2. Detecta chamada recebida: o aviso que o WhatsApp Web desenha ("Chamada de voz recebida" +
-//    Aceitar/Recusar — pt, en, es) via MutationObserver, ou uma notificação com esse texto. Avisa o
-//    processo principal (wa:incoming-call / wa:call-ended), que marca a conta e troca para ela.
+// 2. Detecta ligação recebida por um poll de 1 s (callSnapshot): botão [data-testid=voip-accept-call-button] do
+//    mini player, título da aba "Ligação de voz/vídeo recebida de X" (CALL_RE) — a Notification da página só dá o
+//    nome. Avisa o main (wa:incoming-call / wa:call-ended após 3 s sem sinal), que marca a conta, mostra a
+//    janelinha e, opcionalmente, troca para ela; atender/recusar (wa:call-action) clica o botão do WhatsApp.
 // 3. A comunicação página → preload sai por eventos DOM e atributos; não há ponte exposta no window.
 const { ipcRenderer, webFrame } = require('electron');
 
-const CALL_RE = /(chamada|llamada|videollamada)[^.]{0,40}(recebida|entrante)|incoming[^.]{0,30}call|is calling|est[áa] (te )?(ligando|chamando)/i;
-const ANSWER_RE = /aceitar|atender|recusar|accept|answer|decline|reject|aceptar|contestar|rechazar/i;
+// pt-BR do WhatsApp Web: "Ligação de voz recebida (de X)" (título da aba, Notification e mini player); "chamada" fica por garantia
+const CALL_RE = /(liga[çc][ãa]o|chamada|llamada|videollamada)[^.]{0,40}?(recebida|entrante)|incoming[^.]{0,30}?call|is calling|est[áa] (te )?(ligando|chamando)/i;
+// Corpo da Notification de chamada do WhatsApp ("📞 Ligação de voz recebida", "Ligação de vídeo recebida de X" em grupo)
+const CALL_BODY_RE = /^\W*((liga[çc][ãa]o|chamada) de (voz|v[ií]deo) recebida|incoming (voice|video) call|(video)?llamada( de (voz|video))? entrante)\b/i;
 
 const STRIP_FSA = process.platform === 'linux';
 const PATCH = `(() => {
@@ -19,8 +22,32 @@ const PATCH = `(() => {
   window.__palettePatched = true;
   if (${STRIP_FSA}) for (const k of ['showOpenFilePicker', 'showSaveFilePicker', 'showDirectoryPicker']) { try { delete window[k]; if (k in window) Object.defineProperty(window, k, { value: undefined, configurable: true, writable: true }); } catch {} }
   const Native = window.Notification;
+  // Conta em segundo plano (não selecionada ou com diálogo aberto): a página se vê como aba em segundo plano — sem
+  // foco e oculta — para o WhatsApp notificar e não marcar como lidas mensagens que ninguém viu. Conta na tela com a
+  // janela do Palette em foco: a página se vê focada mesmo com o foco real na barra lateral (sem notificar o que o
+  // usuário está olhando). Fora disso, vale o foco real.
+  let background = false;
+  let foreground = false;
+  const nativeHasFocus = Document.prototype.hasFocus;
+  const hiddenGet = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden').get;
+  const visibilityGet = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState').get;
+  Object.defineProperty(Document.prototype, 'hasFocus', { configurable: true, writable: true, value: function hasFocus() { return background ? false : foreground ? true : nativeHasFocus.call(this); } });
+  Object.defineProperty(Document.prototype, 'hidden', { configurable: true, get() { return background ? true : hiddenGet.call(this); } });
+  Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get() { return background ? 'hidden' : visibilityGet.call(this); } });
+  window.__paletteSetBackground = (value, focused) => {
+    value = !!value;
+    focused = !value && !!focused;
+    const wasBackground = background;
+    const wasForeground = foreground;
+    background = value;
+    foreground = focused;
+    if (value !== wasBackground) document.dispatchEvent(new Event('visibilitychange'));
+    if (value && !wasBackground) window.dispatchEvent(new Event('blur'));
+    else if (focused && !wasForeground) window.dispatchEvent(new Event('focus'));
+    else if (!focused && wasForeground && !value) window.dispatchEvent(new Event('blur'));
+  };
   if (typeof Native !== 'function') return;
-  const CALL_RE = ${CALL_RE.toString()};
+  const CALL_BODY_RE = ${CALL_BODY_RE.toString()};
   const inert = (title) => ({
     title, close() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; },
     onclick: null, onclose: null, onerror: null, onshow: null,
@@ -30,10 +57,14 @@ const PATCH = `(() => {
     document.dispatchEvent(new CustomEvent('palette:incoming-call'));
   };
   function PaletteNotification(title, options) {
-    const text = [title, options && options.body].filter(Boolean).join(' — ');
-    if (CALL_RE.test(text)) signalCall(text);
+    const body = String((options && options.body) || '');
+    if (CALL_BODY_RE.test(body)) signalCall(title); // só o corpo no formato do WhatsApp conta; o título é o nome do contato
     if (window.__paletteMuted) return inert(title);
-    const notification = new Native(title, options);
+    const account = window.__paletteAccountName;
+    const shownTitle = account && !String(title).endsWith(' · ' + account) ? String(title) + ' · ' + account : title;
+    document.documentElement.dataset.paletteNotified = JSON.stringify({ background, foreground });
+    document.dispatchEvent(new CustomEvent('palette:notified'));
+    const notification = new Native(shownTitle, options);
     notification.addEventListener('click', () => document.dispatchEvent(new CustomEvent('palette:notification-click')));
     return notification;
   }
@@ -41,22 +72,6 @@ const PATCH = `(() => {
   Object.defineProperty(PaletteNotification, 'permission', { get: () => Native.permission });
   Object.defineProperty(PaletteNotification, 'maxActions', { get: () => Native.maxActions });
   PaletteNotification.requestPermission = (...args) => Native.requestPermission(...args);
-  // Conta em segundo plano (não selecionada): a página se vê como aba em segundo plano — sem foco e oculta —
-  // para o WhatsApp notificar e não marcar como lidas mensagens que o usuário não está vendo.
-  let background = false;
-  const nativeHasFocus = Document.prototype.hasFocus;
-  const hiddenGet = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden').get;
-  const visibilityGet = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState').get;
-  Object.defineProperty(Document.prototype, 'hasFocus', { configurable: true, writable: true, value: function hasFocus() { return background ? false : nativeHasFocus.call(this); } });
-  Object.defineProperty(Document.prototype, 'hidden', { configurable: true, get() { return background ? true : hiddenGet.call(this); } });
-  Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get() { return background ? 'hidden' : visibilityGet.call(this); } });
-  window.__paletteSetBackground = (value) => {
-    value = !!value;
-    if (value === background) return;
-    background = value;
-    document.dispatchEvent(new Event('visibilitychange'));
-    window.dispatchEvent(new Event(value ? 'blur' : 'focus'));
-  };
   window.Notification = PaletteNotification;
 })();`;
 
@@ -67,77 +82,107 @@ document.addEventListener('palette:notification-click', () => ipcRenderer.send('
 ipcRenderer.on('wa:muted', (_event, muted) => {
   webFrame.executeJavaScript(`window.__paletteMuted = ${muted ? 'true' : 'false'};`).catch(() => {});
 });
-ipcRenderer.on('wa:background', (_event, background) => {
-  webFrame.executeJavaScript(`window.__paletteSetBackground && window.__paletteSetBackground(${background ? 'true' : 'false'});`).catch(() => {});
+ipcRenderer.on('wa:background', (_event, background, focused, name) => {
+  webFrame.executeJavaScript(`window.__paletteAccountName = ${JSON.stringify(String(name || ''))}; window.__paletteSetBackground && window.__paletteSetBackground(${background ? 'true' : 'false'}, ${focused ? 'true' : 'false'});`).catch(() => {});
 });
+document.addEventListener('palette:notified', () => ipcRenderer.send('wa:notified', document.documentElement.dataset.paletteNotified || ''));
 
-// Atender/recusar pela janelinha de chamada do Palette: clica no botão correspondente do aviso do WhatsApp
-const ACCEPT_RE = /aceitar|atender|accept|answer|aceptar|contestar/i;
-const DECLINE_RE = /recusar|decline|reject|rechazar|ignorar|ignore/i;
-ipcRenderer.on('wa:call-action', (_event, action) => {
-  const re = action === 'accept' ? ACCEPT_RE : DECLINE_RE;
-  const scope = ringing && ringing.node && ringing.node.isConnected ? ringing.node : document;
-  const label = (el) => `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.textContent || ''}`;
-  const target = Array.from(scope.querySelectorAll('button, [role="button"]')).find((el) => re.test(label(el)));
-  if (target) target.click();
-  ipcRenderer.send('wa:call-action-result', action, !!target);
-});
 
 // ---------- chamada recebida ----------
-let ringing = null; // { node?: Element, timer, timeout }
+// Fonte da verdade é a UI do próprio WhatsApp Web (lida nos bundles em 25/10/2026): o mini player da chamada recebida
+// nasce DENTRO da página com data-testid estáveis (voip-accept-call-button, voip-reject-call-button,
+// voip-call-header-name, voip-call-participant-info-call-state-text), o título da aba alterna a cada 2 s com
+// "Ligação de voz recebida de X" enquanto toca, e sai uma Notification "X — Ligação de voz recebida" (quando passa
+// por window.Notification). Um poll leve de 1 s decide começo e fim do toque; nada de heurística de MutationObserver.
+const ACCEPT_SELECTOR = '[data-testid="voip-accept-call-button"]';
+const REJECT_SELECTOR = '[data-testid="voip-reject-call-button"]';
+const CALL_NAME_SELECTOR = '[data-testid="voip-call-header-name"]';
+const CALL_STATE_SELECTOR = '[data-testid="voip-call-participant-info-call-state-text"]';
+const ACCEPT_RE = /aceitar|atender|accept|answer|aceptar|contestar/i;
+const DECLINE_RE = /recusar|decline|reject|rechazar/i;
+let ringing = null; // { since, text }
+let callMisses = 0;
+let callNotificationAt = 0;
+let callNotificationText = '';
+let callTitleAt = 0;
+let callTitleCaller = '';
+let callTitleKind = '';
+
+const callKind = (text) => (/v[ií]deo/i.test(text || '') ? 'Ligação de vídeo recebida' : 'Ligação de voz recebida');
+
+function callSnapshot() {
+  const acceptEl = document.querySelector(ACCEPT_SELECTOR);
+  const accept = acceptEl && acceptEl.getClientRects().length ? acceptEl : null; // só conta se estiver na tela
+  const title = document.title || '';
+  const now = Date.now();
+  if (ringing && ringing.sawButton && !accept) return null; // o mini player apareceu e sumiu: atendida, recusada ou ignorada
+  if (CALL_RE.test(title)) {
+    // o WhatsApp alterna o título (2 s normal, 2 s chamada): vale como sinal por 4,5 s depois da última vez visto
+    callTitleAt = now;
+    callTitleCaller = title.replace(/^.*?(recebida|entrante|call)\s*(de|from|von)?\s*/i, '').trim();
+    callTitleKind = title;
+  }
+  const recentTitle = now - callTitleAt < 4500;
+  // A Notification da página só dá o nome do contato: quem começa e mantém o toque é o que só o WhatsApp controla
+  // (botão do mini player ou título da aba) — uma mensagem cujo texto fale de ligação não vira chamada falsa
+  if (!accept && !recentTitle) return null;
+  const name = ((document.querySelector(CALL_NAME_SELECTOR) || {}).textContent || '').trim();
+  const state = ((document.querySelector(CALL_STATE_SELECTOR) || {}).textContent || '').trim();
+  const caller = name || (recentTitle ? callTitleCaller : '') || callNotificationText;
+  const kind = callKind(`${state} ${recentTitle ? callTitleKind : ''} ${callNotificationText}`);
+  return { text: caller ? `${kind} · ${caller}` : kind, button: !!accept };
+}
 
 function stopRinging() {
   if (!ringing) return;
-  clearInterval(ringing.timer);
-  clearTimeout(ringing.timeout);
   ringing = null;
+  callMisses = 0;
+  callNotificationAt = 0;
+  callNotificationText = '';
+  callTitleAt = 0;
   ipcRenderer.send('wa:call-ended');
 }
 
-function startRinging(node, text) {
-  if (ringing) return;
-  ringing = { node };
-  ipcRenderer.send('wa:incoming-call', String(text || '').replace(/\s+/g, ' ').trim().slice(0, 120));
-  // Termina quando o aviso some da tela (atendida, recusada ou perdida); sem nó (notificação), em 45 s
-  ringing.timer = setInterval(() => {
-    if (node && (!node.isConnected || !CALL_RE.test(node.textContent || ''))) stopRinging();
-  }, 1500);
-  ringing.timeout = setTimeout(stopRinging, node ? 90000 : 45000);
-}
-
-// Nó com mais de 80 elementos não é o aviso de chamada: descarta sem montar o texto (custo constante)
-function smallEnough(node) {
-  const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
-  let count = 0;
-  while (walker.nextNode()) if (++count > 80) return false;
-  return true;
-}
-
-const describe = (node) => {
-  const labels = Array.from(node.querySelectorAll('[aria-label]'), (el) => el.getAttribute('aria-label')).join(' ');
-  return `${node.textContent || ''} ${labels}`;
-};
-
-const observer = new MutationObserver((mutations) => {
-  if (ringing) return;
-  for (const mutation of mutations) {
-    for (const node of mutation.addedNodes) {
-      if (node.nodeType !== 1 || !smallEnough(node)) continue;
-      const text = describe(node);
-      if (text.length > 600 || !CALL_RE.test(text) || !ANSWER_RE.test(text)) continue;
-      const lines = String(node.innerText || node.textContent || '').split(/\n+/).map((l) => l.trim()).filter((l) => l && !ANSWER_RE.test(l));
-      startRinging(node, lines.join(' · ') || (node.textContent || '').trim());
-      return;
+function pollCall() {
+  const snap = callSnapshot();
+  if (snap) {
+    callMisses = 0;
+    if (!ringing) {
+      ringing = { since: Date.now(), text: snap.text, sawButton: snap.button };
+      ipcRenderer.send('wa:incoming-call', snap.text);
+    } else if (snap.button) ringing.sawButton = true;
+    if (ringing && snap.text !== ringing.text && snap.text.length > ringing.text.length) {
+      ringing.text = snap.text; // o nome do contato chegou depois do primeiro sinal
+      ipcRenderer.send('wa:incoming-call', snap.text);
     }
+    return;
   }
-});
+  if (ringing && ++callMisses >= 3) stopRinging(); // 3 s sem botão, título ou notificação: atendida, recusada ou perdida
+}
+setInterval(pollCall, 1000);
 
+// Notification da página com texto de chamada (o proxy avisa por evento DOM): entra como sinal por 12 s
 document.addEventListener('palette:incoming-call', () => {
-  if (ringing) return;
-  startRinging(null, document.documentElement.dataset.paletteCall || 'Chamada recebida');
+  callNotificationAt = Date.now();
+  callNotificationText = (document.documentElement.dataset.paletteCall || '').trim();
+  pollCall();
 });
 
-window.addEventListener('DOMContentLoaded', () => observer.observe(document.body, { childList: true, subtree: true }));
+// Atender/recusar pela janelinha do Palette: clica no botão do próprio WhatsApp (seletor exato; senão, rótulo dentro
+// da UI de chamada). Nunca procura no documento inteiro, para não clicar em outra coisa.
+const clickable = (el) => (el && !el.matches('button, [role="button"]') ? el.querySelector('button, [role="button"]') || el.closest('button, [role="button"]') || el : el);
+ipcRenderer.on('wa:call-action', (_event, action) => {
+  const re = action === 'accept' ? ACCEPT_RE : DECLINE_RE;
+  const label = (el) => `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.textContent || ''}`;
+  const exact = clickable(document.querySelector(action === 'accept' ? ACCEPT_SELECTOR : REJECT_SELECTOR));
+  const fallback = () => Array.from(document.querySelectorAll('[data-testid^="voip-"] button, [data-testid^="voip-"][role="button"], button[data-testid^="voip-"]')).find((el) => re.test(label(el)));
+  const target = exact || fallback();
+  if (target) {
+    target.click();
+    stopRinging(); // o usuário agiu: encerra o toque na hora (o WhatsApp some com o botão em seguida)
+  }
+  ipcRenderer.send('wa:call-action-result', action, !!target);
+});
 
 // ---------- estado de login (QR code x app logado) e foto do perfil ----------
 let lastLogin;

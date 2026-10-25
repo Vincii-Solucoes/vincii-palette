@@ -163,6 +163,16 @@ function createWindow() {
     pickSave: useOwnPicker || SMOKE_DIR ? (spec) => picker.save(spec) : null,
     interceptChooser: useOwnPicker || !!SMOKE_DIR, // no smoke, testa a entrega do arquivo mesmo no macOS
   });
+  // Janela ganha/perde foco: a conta na tela passa a se ver focada/desfocada (o foco real pode estar na barra)
+  win.on('focus', () => manager.pushAllBackground());
+  win.on('blur', () => manager.pushAllBackground());
+  manager.on('call-title', (id, text) => {
+    const entry = manager.entries.get(id);
+    if (entry && entry.ringing) manager.touchRinging(id);
+    else onIncomingCall(id, text, null);
+  });
+  manager.on('popup', (id, url) => logCall(`pop-out aberto conta=${id} url=${url || '?'}`));
+  manager.on('call-cleared', (id) => callPopup.hide(id)); // vigia/título/remoção: a janelinha some junto com o toque
   manager.on('change', onAccountsChanged);
   // Conta vinculada caiu para a página de QR code: avisa para o usuário vincular de novo
   manager.on('logged-out', (account) => {
@@ -471,10 +481,10 @@ function registerIpc() {
   const shellOn = (channel, handler) => ipcMain.on(channel, (event, ...args) => {
     if (fromShell(event)) handler(event, ...args);
   });
-  const lastCallSignal = new Map(); // por conta: evita rajadas de wa:incoming-call
   picker = createPicker({ sendCommand, fromShell });
   callPopup = createCallPopup({
     onAction: (id, action) => {
+      logCall(`janelinha: ${action} conta=${id}`);
       if (action === 'open') {
         manager.select(id);
         showWindow();
@@ -488,6 +498,7 @@ function registerIpc() {
   ipcMain.on('wa:call-action-result', (event, action, found) => {
     const id = manager.idOf(event.sender);
     if (!id) return;
+    logCall(`ação ${action} conta=${id} botão ${found ? 'encontrado' : 'NÃO encontrado'}`);
     callPopup.hide(id);
     if (action === 'accept' || !found) {
       manager.select(id);
@@ -497,7 +508,11 @@ function registerIpc() {
   shellHandle('shell:ready', () => fullState());
   shellOn('shell:select', (_event, id) => manager.select(String(id)));
   shellHandle('shell:add', (_event, data) => manager.add(sanitizeAccount(data || {})).id);
-  shellHandle('shell:update', (_event, id, data) => !!manager.update(String(id), sanitizeAccount(data || {}, manager.find(String(id)) || {})));
+  shellHandle('shell:update', (_event, id, data) => {
+    const ok = !!manager.update(String(id), sanitizeAccount(data || {}, manager.find(String(id)) || {}));
+    if (ok) manager.pushBackground(String(id)); // nome novo vai para o título das notificações
+    return ok;
+  });
   // Imagem para o avatar: diálogo do sistema → quadrado central redimensionado para 128px (PNG em data URL)
   shellHandle('shell:pick-image', async () => {
     let file = null;
@@ -565,33 +580,17 @@ function registerIpc() {
   // Chamada recebida numa conta: marca o avatar, troca para ela (opção), traz a janela e avisa pelo sistema
   ipcMain.on('wa:incoming-call', (event, text) => {
     const id = manager.idOf(event.sender);
+    if (id) onIncomingCall(id, text, event.sender);
+  });
+  ipcMain.on('wa:notified', (event, info) => {
+    const id = manager.idOf(event.sender);
     const account = id && manager.find(id);
-    if (!account) return;
-    if (Date.now() - (lastCallSignal.get(id) || 0) < 5000) return;
-    lastCallSignal.set(id, Date.now());
-    const detail = String(text || '').slice(0, 120);
-    manager.setRinging(id, detail);
-    // Janelinha no canto da tela: sempre que a chamada chega numa conta que não está na tela em foco
-    if (manager.activeId !== id || manager.modalOpen || !win || win.isDestroyed() || !win.isVisible() || !win.isFocused()) {
-      const snap = manager.state().accounts.find((a) => a.id === id) || account;
-      callPopup.show({ id, name: account.name, color: account.color, image: snap.avatar === 'image' ? snap.image : snap.avatar === 'photo' ? snap.photo : null, text: detail });
-    }
-    if (store.get('settings').switchOnCall !== false && manager.activeId !== id) manager.select(id);
-    if (win && !win.isDestroyed()) {
-      if (!win.isVisible()) showWindow();
-      else if (!win.isFocused()) win.flashFrame(true);
-    }
-    if (isMac && (!win || !win.isFocused())) app.dock.bounce('critical');
-    if (!win || win.isDestroyed() || !win.isFocused()) {
-      notify(`Chamada recebida · ${account.name}`, detail || 'Alguém está ligando no WhatsApp.', () => {
-        manager.select(id);
-        showWindow();
-      });
-    }
+    logCall(`notificação da página conta="${account ? account.name : '?'}" estado=${String(info || '').slice(0, 80)} ativa=${manager.activeId === id} janelaFocada=${!!win && !win.isDestroyed() && win.isFocused()}`);
   });
   ipcMain.on('wa:call-ended', (event) => {
     const id = manager.idOf(event.sender);
     if (!id) return;
+    logCall(`toque fim conta=${id}`);
     manager.clearRinging(id);
     callPopup.hide(id);
   });
@@ -621,6 +620,7 @@ async function runSmoke(dir) {
   const closeModal = () => shellJs(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
   fs.mkdirSync(dir, { recursive: true });
   const info = { steps: [] };
+  const mark = (name) => console.log('[smoke]', name);
   const step = async (name) => info.steps.push({ step: name, modalOpen: manager.modalOpen, ...(await shellJs(`({ modal: JSON.stringify(modal), contentKey, className: document.getElementById('content').className })`).catch((e) => ({ erro: e.message }))) });
 
   // 1. Barra lateral: boas-vindas (perfil novo), diálogo de nova conta e configurações
@@ -657,6 +657,7 @@ async function runSmoke(dir) {
   await step('conta adicionada');
   await delay(8000); // o WhatsApp Web renderiza o QR code depois de carregar
   await step('whatsapp carregado');
+  mark('whatsapp carregado');
 
   // 3. Gerenciador de contas: silenciar, renomear, segunda conta, alternar, reordenar, remover
   const first = manager.activeId;
@@ -722,19 +723,41 @@ async function runSmoke(dir) {
     second: await secondJs(`({ hidden: document.hidden, visibility: document.visibilityState, hasFocus: document.hasFocus() })`),
     first: await probe(`({ hidden: document.hidden, visibility: document.visibilityState })`),
   };
-  await secondJs(`(() => { const d = document.createElement('div'); d.id = 'palette-fake-call'; d.innerHTML = '<p>Chamada de voz recebida</p><p>Fulano</p><button aria-label="Aceitar">Aceitar</button><button>Recusar</button>'; d.querySelector('button').addEventListener('click', () => { window.__fakeAccepted = true; }); document.body.appendChild(d); return true; })()`);
-  await delay(800);
+  // Título da aba como o WhatsApp faz ao tocar ("Ligação de voz recebida de X" alternando com o normal): começa o
+  // toque pelo main, não mexe nas não lidas, e termina sozinho quando o título volta ao normal
+  await probe(`document.title = '(2) WhatsApp'; true`);
+  await delay(600);
+  info.call = { unreadBefore: manager.entries.get(first).unread };
+  mark('título de chamada');
+  await probe(`document.title = 'Ligação de voz recebida de Beltrano'; true`);
+  await delay(700);
+  info.call.titleRinging = manager.entries.get(first).ringing;
+  info.call.unreadDuringTitle = manager.entries.get(first).unread;
+  await delay(1500); // título visível por ≥ 2,2 s: o poll de 1 s do preload sempre o vê (como no WhatsApp real)
+  info.call.titleConfirmedByPreload = !!manager.entries.get(first).callSource;
+  await probe(`document.title = '(2) WhatsApp'; true`);
+  await delay(9000);
+  info.call.titleCleared = !manager.entries.get(first).ringing;
+  info.call.titlePopupHidden = !callPopup.isVisible();
+  await probe(`document.title = 'WhatsApp'; true`);
+  mark('mini player falso');
+  // Mini player como o WhatsApp monta (data-testid reais) na conta inativa
+  await secondJs(`(() => { const d = document.createElement('div'); d.id = 'palette-fake-call'; d.innerHTML = '<div data-testid="voip-call-header"><span data-testid="voip-call-header-name">Fulano</span><span data-testid="voip-call-participant-info-call-state-text">Ligação de voz recebida</span></div><button data-testid="voip-accept-call-button" aria-label="Aceitar">Aceitar</button><button data-testid="voip-reject-call-button" aria-label="Recusar">Recusar</button>'; d.querySelector('[data-testid="voip-accept-call-button"]').addEventListener('click', () => { window.__fakeAccepted = true; }); document.body.appendChild(d); return true; })()`);
+  await delay(1800);
   await shot('ringing.png', win.webContents);
-  info.call = {
+  Object.assign(info.call, {
     ringing: secondEntry.ringing,
     switchedToSecond: manager.activeId === second.id,
     railRinging: await shellJs(`!!document.querySelector('.acc.ringing')`),
-  };
+    ringVisible: await shellJs(`(() => { const r = document.querySelector('.acc.ringing .ring'); if (!r) return false; const s = getComputedStyle(r); return s.display !== 'none' && s.animationName !== 'none'; })()`),
+    audibleHidden: await shellJs(`(document.querySelector('.acc.ringing .audible') || { hidden: null }).hidden`),
+  });
   // Janelinha de chamada: aparece com quem liga e a conta; "Atender" clica no botão do WhatsApp (aqui, o falso)
   info.call.popupVisible = callPopup.isVisible();
   const popupWc = callPopup.webContents();
   info.call.popupText = popupWc ? await popupWc.executeJavaScript(`[document.getElementById('title').textContent, document.getElementById('who').textContent, document.getElementById('account').textContent].join(' | ')`).catch((e) => `erro: ${e.message}`) : null;
   if (popupWc) await shot('call-popup.png', popupWc);
+  mark('janelinha: atender');
   manager.select(first); // volta para a primeira: atender pela janelinha deve trazer a segunda
   await delay(200);
   if (popupWc) await popupWc.executeJavaScript(`document.getElementById('accept').click()`).catch(() => {});
@@ -742,6 +765,7 @@ async function runSmoke(dir) {
   info.call.acceptedInPage = await secondJs('window.__fakeAccepted === true');
   info.call.switchedAfterAccept = manager.activeId === second.id;
   info.call.popupHiddenAfterAccept = !callPopup.isVisible();
+  mark('popup do WhatsApp');
   // Popup do próprio WhatsApp (tela da chamada): vira janela de verdade, com a mesma sessão
   const windowsBefore = BrowserWindow.getAllWindows().length;
   await secondJs(`!!window.open('https://web.whatsapp.com/', '_blank', 'width=420,height=600')`);
@@ -749,9 +773,11 @@ async function runSmoke(dir) {
   const popups = BrowserWindow.getAllWindows().filter((w) => w !== win && w.webContents !== callPopup.webContents());
   info.call.waPopup = { opened: BrowserWindow.getAllWindows().length > windowsBefore, url: popups[0] ? popups[0].webContents.getURL() : null, title: popups[0] ? popups[0].getTitle() : null };
   for (const w of popups) w.close();
+  mark('fim da chamada falsa');
   await secondJs(`document.getElementById('palette-fake-call').remove()`);
-  await delay(2500);
+  await delay(4500);
   info.call.clearedAfterRemove = !secondEntry.ringing;
+  await delay(400);
   info.call.railCleared = await shellJs(`!document.querySelector('.acc.ringing')`);
   manager.select(first);
   manager.reorder([second.id, first]);
@@ -760,14 +786,17 @@ async function runSmoke(dir) {
   info.manager.railOrder = await shellJs(`[...document.querySelectorAll('.acc .avatar')].map((e) => e.textContent).join(',')`);
   info.manager.visibleViews = [...manager.entries.values()].filter(({ view }) => view.getVisible()).length;
   info.manager.childrenBeforeRemove = win.contentView.children.length;
+  mark('remover segunda conta');
   await manager.remove(second.id);
   await delay(300);
   info.manager.afterRemove = { accounts: manager.accounts.length, entries: manager.entries.size, children: win.contentView.children.length, active: (manager.find(manager.activeId) || {}).name };
   await step('gerenciador testado');
+  mark('seletor');
 
   // 4. Seletor do Palette: <input type=file> da página abre o diálogo da barra; a escolha chega ao input via protocolo
   info.picker = await smokePicker({ dir, wc, shellJs, probe, shot, delay }).catch((e) => ({ erro: e.message }));
   await step('seletor testado');
+  mark('fim');
   info.url = wc.getURL();
   info.page = await probe(`(() => ({
     title: document.title,
@@ -930,6 +959,40 @@ function setUpdateState(patch) {
 }
 
 const windowVisible = () => !!win && !win.isDestroyed() && win.isVisible();
+
+// Chamada recebida: sinal do preload (UI/título/Notification da página, vindo da view ou do pop-out) ou do
+// título da aba visto pelo main. Não roubamos o foco nem duplicamos a notificação do próprio WhatsApp: a
+// janelinha no canto (quando a conta não está na tela em foco), o anel na barra, flash/dock e, se a opção
+// estiver ligada, a troca para a conta.
+function onIncomingCall(id, text, sender) {
+  const account = manager.find(id);
+  if (!account) return;
+  const detail = String(text || '').slice(0, 120);
+  const entry = manager.entries.get(id);
+  const already = !!(entry && entry.ringing);
+  manager.setRinging(id, detail, sender);
+  logCall(`toque ${already ? 'atualizado' : 'início'} conta="${account.name}" texto="${detail}" origem=${sender ? (entry && entry.view.webContents === sender ? 'view' : 'pop-out') : 'título'}`);
+  const viewing = manager.activeId === id && !manager.modalOpen && !!win && !win.isDestroyed() && win.isVisible() && win.isFocused();
+  if (!viewing) {
+    const snap = manager.state().accounts.find((a) => a.id === id) || account;
+    callPopup.show({ id, name: account.name, color: account.color, image: snap.avatar === 'image' ? snap.image : snap.avatar === 'photo' ? snap.photo : null, text: detail });
+  }
+  if (already) return;
+  if (store.get('settings').switchOnCall !== false && manager.activeId !== id) manager.select(id);
+  if (win && !win.isDestroyed() && win.isVisible() && !win.isFocused()) win.flashFrame(true);
+  if (isMac && (!win || !win.isFocused())) app.dock.bounce('informational');
+}
+
+// Diagnóstico de chamadas e notificações: userData/calls.log (só eventos e nomes de conta; sem conteúdo de mensagem)
+function logCall(message) {
+  try {
+    const file = path.join(app.getPath('userData'), 'calls.log');
+    try {
+      if (fs.statSync(file).size > 512 * 1024) fs.renameSync(file, `${file}.1`);
+    } catch {}
+    fs.appendFile(file, `${new Date().toISOString()} ${message}\n`, () => {});
+  } catch {}
+}
 
 function notify(title, body, onClick) {
   if (!Notification.isSupported()) return false;
